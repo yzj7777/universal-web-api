@@ -224,7 +224,7 @@ def _run_auto_update() -> bool:
             raise SystemExit(1)
         _log("[OK] uv 环境已同步")
     else:
-        _log("[WARN] 本次未应用更新，继续启动")
+        _log("[INFO] 本次未应用更新（通常表示已是最新版本），继续启动")
     _log()
     return applied
 

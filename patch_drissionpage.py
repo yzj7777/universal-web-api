@@ -1,5 +1,5 @@
 # patch_drissionpage.py - 自动补丁 DrissionPage Listener
-# 用法：python patch_drissionpage.py
+# 用法：uv run python patch_drissionpage.py
 # 时机：uv sync 之后、服务启动之前（main.py 启动引导会自动执行）
 
 import importlib
@@ -963,7 +963,7 @@ def main():
     
     if apply_patch(filepath):
         print("\n🎉 补丁完成！")
-        print("   恢复命令: python patch_drissionpage.py --restore")
+        print("   恢复命令: uv run python patch_drissionpage.py --restore")
     else:
         print("\n❌ 补丁失败，请将以上输出发给开发者")
 
