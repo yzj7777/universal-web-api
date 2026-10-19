@@ -22,7 +22,7 @@
 | B2 | 入口 | 新增 `app/__main__.py`，支持 `python -m app` | 低 | ✅ |
 | B3 | 防回归 | 新增 `tests/test_structure.py`（13 项结构棘轮） | 无 | ✅ |
 | C1 | 路径 | 新增 `app/paths.py`，消除 CWD 相对路径 + 启动时固定工作目录 | 中 | ✅ |
-| C2 | 分层 | 新增 `app/api/admin/`（pool + presets），路由表快照棘轮 | 中 | 🟡 部分完成（见 §6） |
+| C2 | 分层 | 新增 `app/api/admin/`、`stream_helpers.py`、`openai_responses_support.py`，路由表快照棘轮 | 中 | 🟡 部分完成（见 §6） |
 | C3 | 暂缓 | `config/` 只读 + `var/` 可写数据目录 | — | ⏸ 见 §6 |
 | C4 | 暂缓 | `src/` 布局、包改名 `app` → `uwapi` | — | ⏸ 见 §6 |
 
@@ -223,11 +223,12 @@ def main() -> None:
 
 | 指标 | 改动前 | 改动后 | 结论 |
 | --- | --- | --- | --- |
-| `pytest` 通过 | 1302 | **1326** | +24（结构棘轮 + 路由表棘轮 + 用例适配） |
+| `pytest` 通过 | 1302 | **1328** | +26（结构棘轮 + 路由表棘轮 + 用例适配） |
 | `pytest` 失败 | 2 | **2** | 同一批既有失败，未新增 |
 | `pytest` 跳过 | 157 | 157 | 不变 |
 | `ruff check .` | 通过 | 通过 | 无新增告警 |
-| `tests/test_exception_ratchet.py` | 通过 | 通过 | 基线仅重命名，计数一致（19/4/2） |
+| `tests/test_exception_ratchet.py` | 通过 | 通过 | 纯搬迁：1422 → 1413，基线随文件搬家更新 |
+| `app.routes` 路由快照 | 134 条 | 134 条 | 零差异（`tests/test_route_table.py`） |
 
 既有失败（与本次改动无关，改动前就存在）：
 
@@ -317,7 +318,7 @@ python -m app
 `/repo/static/index.html`，`paths.download_dir()` 返回绝对目录，`ensure_project_cwd()`
 把 CWD 切回项目根——即「不是从项目根启动」也不再走偏。
 
-### C2 进行中：拆分巨型路由文件（第一批已完成）
+### C2 进行中：拆分巨型路由文件（第一、二批已完成）
 
 **第一批（已执行）**
 
@@ -342,6 +343,22 @@ python -m app
 3. **协议文件里不再有面板端点**：`test_panel_endpoints_are_not_defined_in_protocol_modules`
    检查 `chat.py` 不含 `@router.*("/api/`、`tab_routes.py` 不含 `/api/tab-pool/` 与 `/api/presets/`。
 
+**第二批（已执行）：抽出协议无关的公共辅助**
+
+| 迁移 | 从 | 到 | 内容 |
+| --- | --- | --- | --- |
+| 跨文件重复的纯函数（9 个）+ SSE 打包（3 个） | `chat.py` / `tab_routes.py` | `app/api/stream_helpers.py`（206 行） | `_extract_*_media_items`、`_dedupe_media_items`、`_extract_delta_content_text`、`_extract_stream_error_message`、`_is_absolute_request_timeout_error`、`_is_single_choice_request`、`_extract_assistant_content`、`_pack_error`/`_pack_done`/`_pack_error_done` |
+| Responses API 纯转换层（21 个） | `chat.py` | `app/api/openai_responses_support.py`（650 行） | `_normalize_response*`、`_normalize_responses*`、`_chat_payload_to_responses_output`、`_build_responses_usage`、`_responses_error_payload`、`_responses_principal_from_request`、`_responses_state_env_bytes`、`_new_response_item_id`、`_response_*_item_*`、`_is_genuine_task_cancellation` 等 |
+
+结果：`chat.py` **3299 → 2542 行**，`tab_routes.py` **4616 → 4461 行**。
+搬迁前后两文件里逐字节相同的 9 个辅助函数不再各存一份。
+
+**搬迁时必须留在 `chat.py` 的部分**（第二次拆分再处理）：`ChatRequest` / `ResponsesRequest`、
+`_responses_state_by_id` / `_responses_state_total_bytes` / `_load_responses_state` /
+`_store_responses_state`（测试直接 patch）、`_append_response_input_item` /
+`_responses_input_to_messages` / `_responses_request_to_chat_request`（依赖上述状态缓存与请求上下文）、
+三个端点与 `_stream_*_with_lifecycle`。
+
 **迁移手法**：用 AST 计算每个函数/模型的 `(起始行, 结束行)`（含装饰器），
 从原文件**整段摘除**并原样拼进新模块，避免手抄引入差异；随后补齐 import、
 跑路由快照 + 全量回归。异常棘轮基线做了一次**纯搬迁**更新
@@ -349,9 +366,9 @@ python -m app
 
 **后续（未完成）**
 
-- `tab_routes.py` 仍有 4616 行：按 `/tab/{i}`、`/url/{domain}`、`/group/{id}`、`/tab-url/{token}`
+- `tab_routes.py` 仍有 4461 行：按 `/tab/{i}`、`/url/{domain}`、`/group/{id}`、`/tab-url/{token}`
   继续拆成 `app/api/openai/` 下的四个模块；拆分时沿用同一套「先导出路由快照 → 再搬代码」流程。
-- `chat.py` 3299 行：`/v1/chat/completions`、`/v1/responses`、`/v1/models` 三块可各自独立。
+- `chat.py` 2542 行：`/v1/chat/completions`、`/v1/responses`、`/v1/models` 三块可各自独立；Responses 的**状态缓存**仍是最大的耦合点，拆端点前需先把缓存下沉到 `app/services/`。
 - `system.py` 2674 行：`/health`、`/api/settings/*`、`/api/update/*`、`/api/system/*`
   应按「探活 / 设置 / 更新 / 诊断」四组分别落到 `admin/` 与 `system/`。
 - 迁移完成后，`admin/pool.py` 里对 `tab_routes` 私有辅助的依赖可下沉到
@@ -380,6 +397,8 @@ python -m app
 新增    app/api/admin/__init__.py
 新增    app/api/admin/pool.py
 新增    app/api/admin/presets.py
+新增    app/api/stream_helpers.py
+新增    app/api/openai_responses_support.py
 新增    tests/test_route_table.py
 新增    tests/fixtures/route_table.json
 新增    app/paths.py
@@ -404,6 +423,9 @@ python -m app
 修改    app/core/parsers/deepseek_parser.py
 修改    app/update/preserve.py
 修改    app/api/system.py
+修改    app/api/chat.py（拆出 Responses 转换层与流式辅助）
+修改    app/api/tab_routes.py（拆出面板端点与流式辅助）
+修改    tests/fixtures/broad_except_ratchet.json
 修改    app/runtime/bootstrap.py
 修改    app/services/adapter_updates.py
 修改    app/services/config/site_store.py
