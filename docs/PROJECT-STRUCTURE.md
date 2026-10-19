@@ -69,6 +69,43 @@ universal-web-api/
 
 ---
 
+## 1.1 结构改造速查（2026-10-19）
+
+### 巨型文件拆分前后
+
+| 模块 | 改造前 | 改造后 | 现在的构成 |
+| --- | --- | --- | --- |
+| 标签页路由 | `app/api/tab_routes.py` **5142 行** | **316 行**聚合层 | `app/api/openai/{tab,url,group,tab_url}.py` + `shared.py` + `runtime.py` |
+| 系统与运维 | `app/api/system.py` **2675 行** | `app/api/system/` 包（6 个模块） | `health` / `settings` / `updates` / `diagnostics` / `common` / `runtime` |
+| 核心聊天 | `app/api/chat.py` **3299 行** | **2542 行** | 端点 + 生命周期 + Responses 状态缓存；纯转换与流式辅助已外移 |
+| 面板管理 | 内嵌在 `tab_routes.py` | `app/api/admin/` | `pool.py`（`/api/tab-pool/*`、`/api/pool/status`）、`presets.py`（`/api/presets/*`） |
+
+新增的公共模块：`app/api/stream_helpers.py`（跨协议流式辅助，206 行）、
+`app/api/openai_responses_support.py`（Responses 纯转换层，650 行）。
+
+### 新增目录的定位
+
+| 路径 | 一句话作用 |
+| --- | --- |
+| `app/api/admin/` | **面板管理端点**：标签页池与站点预设的增删改查；依赖方向单向 `admin → tab_routes`（后者现在是再导出层）。 |
+| `app/api/openai/` | **标签页 OpenAI 兼容路由**：按 URL 前缀分成 `/tab/`、`/url/`、`/group/`、`/tab-url/` 四个模块，共用 `shared.router`（因此 URL 与注册顺序不变）；`runtime.py` 是测试替换浏览器/请求管理器的唯一落点。 |
+| `app/api/system/` | **系统与运维端点**：探活（`/health`、`/api/logs`）、设置（`/api/settings/*`）、更新（`/api/update/*`）、诊断（`/api/debug/*`、`/api/system/*`）；`common.py` 放四组共用的文件/`.env`/重启辅助。 |
+| `app/paths.py` | 路径唯一来源（`PROJECT_ROOT` / `STATIC_DIR` / `DOWNLOAD_DIR` / `CONFIG_DIR`），运行时不再依赖当前工作目录。 |
+| `app/runtime/` | 启动引导：环境预检、拉起受控浏览器、进程自重启。 |
+| `app/update/` | 自更新引擎、更新保留规则、profile 清理（根目录三个 `.py` 只是 `sys.modules` 兼容壳）。 |
+| `tests/manual/` | 需要真实浏览器/已登录站点的手工脚本，默认不被 pytest 收集。 |
+| `tools/`、`examples/` | 性能采样工具与可运行示例，非服务运行所需。 |
+
+### 一致性保证
+
+- `tests/fixtures/route_table.json` 冻结 `app.routes` 的 134 条 URL（方法集合逐条比对），
+  拆分全程零差异；另有测试禁止同一 `(path, method)` 被注册两次。
+- 三个结构棘轮：`tests/test_structure.py`（包边界/路径/版本）、`test_route_table.py`（URL）、
+  `test_exception_ratchet.py` + `test_driver_ratchet.py`（宽泛异常与直接驱动调用只许减少）。
+- 全量测试 **1331 passed / 157 skipped / 0 failed**，CI（ubuntu + windows）同上。
+
+---
+
 ## 2. 顶层文件
 
 | 文件 | 作用 |
