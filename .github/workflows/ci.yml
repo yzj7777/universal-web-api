@@ -86,4 +86,5 @@ jobs:
       - run: uv run --no-sync pytest -q tests/test_structure.py tests/test_settings_registry.py tests/test_repo_hygiene.py tests/test_uv_environment.py
       # 导入环棘轮：环中模块数/环数/最大纠缠分量只减不增（见 docs/plans/REFACTOR_PLAN-2026-10.md 步骤 0）
       # 分层棘轮：core→services、utils→core 的反向依赖只减不增（步骤 4）
-      - run: uv run --no-sync pytest -q tests/test_import_cycle_ratchet.py tests/test_layering_ratchet.py tests/test_exception_ratchet.py tests/test_driver_ratchet.py
+      # 类型检查棘轮：协议层 mypy 报错数只减不增（步骤 3）
+      - run: uv run --no-sync pytest -q tests/test_import_cycle_ratchet.py tests/test_layering_ratchet.py tests/test_typecheck_ratchet.py tests/test_exception_ratchet.py tests/test_driver_ratchet.py

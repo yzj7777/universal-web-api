@@ -75,6 +75,8 @@ dev = [
     "anthropic>=0.40,<2",
     # 格式化 / lint（pyproject 中已有 ruff 配置）。
     "ruff>=0.6",
+    # 协议层类型检查基线（tests/test_typecheck_ratchet.py）。
+    "mypy>=1.11,<3",
     # Python 3.10 没有 tomllib，测试读取 pyproject.toml 时需要。
     "tomli>=2.0; python_version < '3.11'",
 ]
@@ -107,6 +109,17 @@ extend-exclude = [
     "js",
     "logs",
 ]
+
+[tool.mypy]
+# 基线阶段：只报告、不阻断，由 tests/test_typecheck_ratchet.py 做数量棘轮。
+# 范围与理由见该测试文件的 docstring（重点：全量跟进导入会被 mixin 组合模式的
+# 1415 条 attr-defined 淹没，故只统计协议层文件自身的报错）。
+python_version = "3.10"
+ignore_missing_imports = true
+follow_imports = "silent"
+check_untyped_defs = false
+warn_unused_ignores = false
+warn_redundant_casts = false
 
 [tool.ruff.lint]
 # 分档启用，随重构进度逐步收紧（见 docs/plans/REFACTOR_PLAN-2026-10.md）。
