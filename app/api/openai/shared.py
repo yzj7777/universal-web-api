@@ -29,8 +29,6 @@ router = APIRouter()
 logger = get_logger("API.TAB")
 MODEL_LIST_CREATED = int(time.time())
 
-MODEL_LIST_CREATED = int(time.time())
-
 HEADER_VALUE_QUOTE_SAFE = ":/?#[]@!$&'()*+,;=%-._~"
 
 FOLLOW_DEFAULT_PRESET = "__DEFAULT__"
