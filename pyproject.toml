@@ -40,7 +40,12 @@ dependencies = [
     "uvicorn[standard]>=0.23.0,<0.30.0",
     "pydantic>=2.0.0,<3.0.0",
     "typing-extensions>=4.6.0; python_version < '3.11'",
-    "drissionpage>=4.0.0,<5.0.0",
+    # 上界收紧到 <4.2：启动时会用 patch_drissionpage.py **改写本库 Listener 源码**，
+    # 注入点依赖其内部代码结构。放开到 4.x 任意版本，一次 minor 升级就可能让补丁
+    # 静默失效（表现只是网络监听模式不可用）。补丁脚本现在会在写回后复核并报错退出
+    # （见 tests/test_drissionpage_patch.py），但收紧上界仍是第一道防线。
+    # 升级 DrissionPage 时必须同步验证 patch_drissionpage.py 的注入点仍然命中。
+    "drissionpage>=4.0.0,<4.2.0.0",
     "beautifulsoup4>=4.12.0",
     "json-repair>=0.61.7,<1.0.0",
     "jsonschema>=4.18.0,<5.0.0",
