@@ -4,28 +4,28 @@ Universal Web-to-API 自动更新模块 v2.1
 修复：临时文件处理 + GitHub 重定向处理
 """
 
-import os
-import sys
-import json
 import fnmatch
 import hashlib
 import hmac
-import shutil
-import zipfile
-import tempfile
-import urllib.request
-import urllib.error
-import time
+import json
+import os
+import posixpath
 import re
+import shutil
 import ssl
 import stat
-from pathlib import Path
-from pathlib import PurePosixPath
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+import zipfile
 from datetime import datetime
-from typing import Optional, Tuple
 from http.client import IncompleteRead
+from pathlib import Path, PurePosixPath
+from typing import Optional, Tuple
 from urllib.parse import urlparse
-import posixpath
+
 from app.update.preserve import (
     build_effective_preserve_patterns,
     get_default_update_preserve_patterns,

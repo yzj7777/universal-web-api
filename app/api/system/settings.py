@@ -1,30 +1,32 @@
 """``app/api/system`` 的 settings 分组（原 app/api/system.py 的一部分）。"""
 
+import asyncio
 import json
 import os
 import re
 import tempfile
 import time
-import asyncio
 from pathlib import Path
-from typing import Optional, Any, Dict
+from typing import Any, Dict, Optional
+
+from fastapi import Depends, HTTPException, Request
+
 from app import __version__ as APP_VERSION
-from fastapi import Request, HTTPException, Depends
-from app.core.config import AppConfig, _replace_file_with_retry, atomic_write_json
 from app.api.deps import verify_dashboard_auth as verify_auth
 from app.api.deps import verify_sensitive_admin_auth
-from app.core.http_security import redact_env_for_backup, startup_security_errors
-from app.services.config_engine import config_engine, ConfigConstants
-from app.services.command_engine import command_engine
-from app.services.extractor_manager import extractor_manager
-from app.paths import CONFIG_DIR
-from app.update.preserve import load_update_preserve_settings, save_update_preserve_settings
 from app.api.system.common import (
     _load_env_config_from_file,
     _read_json_object_or_400,
     logger,
     router,
 )
+from app.core.config import AppConfig, _replace_file_with_retry, atomic_write_json
+from app.core.http_security import redact_env_for_backup, startup_security_errors
+from app.paths import CONFIG_DIR
+from app.services.command_engine import command_engine
+from app.services.config_engine import ConfigConstants, config_engine
+from app.services.extractor_manager import extractor_manager
+from app.update.preserve import load_update_preserve_settings, save_update_preserve_settings
 
 _REDACTED_PLACEHOLDERS = {"***", "******", "<redacted>", "[redacted]", "__redacted__", "redacted"}
 

@@ -8,28 +8,30 @@ app/core/workflow/text_input.py - 文本输入处理
 """
 
 import base64
-import re
-import os
-import time
-import json
 import hashlib
-import threading
-import random
+import json
 import math
 import mimetypes
+import os
+import random
+import re
+import threading
+import time
+
 import pyperclip
-from app.core.config import logger, BrowserConstants, WorkflowError
+
+from app.core.config import BrowserConstants, WorkflowError, logger
+from app.core.driver import as_element, browser_driver, driver_for_tab
 from app.core.elements import ElementFinder
 from app.core.tab_pool import get_clipboard_lock
 from app.utils.file_paste import (
     DEFAULT_TEMP_FILE_TYPE,
-    create_temp_file,
     copy_file_to_clipboard,
+    create_temp_file,
     normalize_temp_file_type,
 )
 from app.utils.human_mouse import smooth_move_mouse
 from app.utils.platform import get_primary_modifier_key
-from app.core.driver import as_element, browser_driver, driver_for_tab
 
 # ================= 常量配置 =================
 

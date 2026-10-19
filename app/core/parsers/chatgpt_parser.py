@@ -10,9 +10,10 @@ chatgpt_parser.py - ChatGPT 响应解析器
 
 import json
 import re
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from app.core.config import logger
+
 from .base import ResponseParser
 
 

@@ -13,7 +13,6 @@ from unittest import mock
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # B8 · 命令配置短暂损坏不清空 last-known-good
 # ---------------------------------------------------------------------------
@@ -342,6 +341,7 @@ def test_s11_fetch_connects_to_validated_address_not_fresh_dns(monkeypatch, loca
 
 def test_s11_pin_is_scoped_to_call(monkeypatch, local_http_server):
     import requests
+
     from app.utils import remote_resource
 
     port, _seen = local_http_server
@@ -538,8 +538,9 @@ def test_s6_media_auth_policy():
 def test_s6_media_routes_require_auth_when_enabled(monkeypatch):
     import asyncio
 
-    import main
     from httpx import ASGITransport, AsyncClient
+
+    import main
 
     # _isolate_download_dir 已把媒体目录指向 tmp_path，生产代码按请求解析该目录。
     from app import paths
@@ -875,6 +876,7 @@ def test_s2_trust_boundaries_doc_exists():
 
 def test_s4_rejects_metadata_and_internal_suffix_hosts():
     from fastapi import HTTPException
+
     from app.api.browser_routes import _valid_web_url
 
     for bad in (

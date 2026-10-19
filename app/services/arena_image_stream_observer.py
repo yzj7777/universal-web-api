@@ -14,6 +14,8 @@ from app.core.stream_observer import (
 )
 from app.services.arena_image_generation import (
     ARENA_NATIVE_STOP_SELECTOR as ARENA_IMAGE_NATIVE_STOP_SELECTOR,
+)
+from app.services.arena_image_generation import (
     ArenaImageGenerationError,
     ArenaImageGenerationGuard,
     auto_skip_arena_direct_comparison,

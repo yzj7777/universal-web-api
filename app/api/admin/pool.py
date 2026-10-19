@@ -14,7 +14,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.api.deps import verify_dashboard_auth, verify_dashboard_auth as verify_auth
+from app.api.deps import verify_dashboard_auth
+from app.api.deps import verify_dashboard_auth as verify_auth
 from app.api.tab_routes import (
     FOLLOW_DEFAULT_PRESET,
     TAB_POOL_ALLOCATION_OPTIONS,

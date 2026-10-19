@@ -6,7 +6,8 @@ import json
 import re
 import urllib.request
 from pathlib import Path
-from playwright.sync_api import sync_playwright, expect
+
+from playwright.sync_api import expect, sync_playwright
 
 ROOT=Path(__file__).resolve().parents[2]
 BASE='http://127.0.0.1:8000'

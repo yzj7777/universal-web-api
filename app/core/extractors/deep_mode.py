@@ -6,11 +6,11 @@ v2.2 修复：
 - 支持 DeepSeek ds-markdown 结构
 """
 
-from typing import Any, Optional, Dict, List
+from typing import Any, Dict, List, Optional
 
+from app.core.driver import as_element
 from app.core.extractors.base import BaseExtractor
 from app.core.extractors.image_extractor import image_extractor
-from app.core.driver import as_element
 
 
 class DeepBrowserExtractor(BaseExtractor):

@@ -7,10 +7,11 @@ app/utils/paste.py - 通用粘贴工具
 - 超长文本需要分块避免卡顿/被截断
 """
 
-import time
-import random
 import json
+import random
+import time
 from typing import Optional
+
 from app.core.config import get_logger
 from app.core.driver import driver_for_tab
 

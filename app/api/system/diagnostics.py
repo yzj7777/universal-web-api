@@ -1,20 +1,18 @@
 """``app/api/system`` 的 diagnostics 分组（原 app/api/system.py 的一部分）。"""
 
-import os
-import re
-import time
 import asyncio
-import threading as _threading
-from pathlib import Path
-from typing import Optional, Any, Dict, List
-from fastapi import Request, HTTPException, Depends
-from app.core.config import AppConfig
-from app.core import BrowserConnectionError
-from app.api.deps import verify_dashboard_auth as verify_auth
-from app.utils.site_url import extract_remote_site_domain, route_domain_matches
-from app.core.driver import as_element, driver_for_tab
+import os
 import os as _os
+import re
+import threading as _threading
+import time
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 import psutil as _psutil
+from fastapi import Depends, HTTPException, Request
+
+from app.api.deps import verify_dashboard_auth as verify_auth
 from app.api.system import runtime
 from app.api.system.common import (
     _load_env_config_from_file,
@@ -22,6 +20,10 @@ from app.api.system.common import (
     logger,
     router,
 )
+from app.core import BrowserConnectionError
+from app.core.config import AppConfig
+from app.core.driver import as_element, driver_for_tab
+from app.utils.site_url import extract_remote_site_domain, route_domain_matches
 
 _PROJECT_PROCESS_CACHE: Dict[int, _psutil.Process] = {}
 

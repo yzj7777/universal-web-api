@@ -1,29 +1,22 @@
 """``/tab-url`` 路由分组（由 app/api/tab_routes.py 拆出）。"""
 
-import json
-import time
 import asyncio
+import json
 import queue
 import threading
-from typing import Optional, Any, Dict, List
-from fastapi import Request, HTTPException, Depends, Query
+import time
+from typing import Any, Dict, List, Optional
+
+from fastapi import Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
-from app.api.streaming_response import RequestStreamingResponse as StreamingResponse
-from app.core.config import _request_context, SSEFormatter
-from app.services.request_manager import RequestContext, RequestStatus, watch_client_disconnect
-from app.services.request_lifecycle import request_finalization, get_max_request_execute_time_sec, mark_request_hard_timeout, run_in_request_context, wait_worker_queue_item
-from app.services.tool_calling import build_tool_completion_response, complete_tool_calling_roundtrip_async, decode_browser_non_stream_payload, get_tool_calling_allow_media_postprocess, has_tool_calling_request, iter_tool_stream_chunks, normalize_tool_request, summarize_messages_for_debug
-from app.services.error_metadata import resolve_error_metadata, build_error_response
-from app.api.openai_stop import apply_stop_sequences_to_text, build_stop_sequence_stream_state, filter_openai_stop_sse_chunk, flush_openai_stop_state, iter_openai_sse_payloads
-from app.api.stream_helpers import _dedupe_media_items, _extract_assistant_content, _extract_stream_error_message, _is_single_choice_request, _pack_done, _pack_error, _pack_error_done
+
 from app.api.deps import verify_service_auth
 from app.api.openai import runtime
 from app.api.openai.shared import (
-    ChatRequest,
     MODEL_LIST_CREATED,
     SSE_HEARTBEAT_INTERVAL,
     STREAM_QUEUE_POLL_TIMEOUT,
-    _RouteToolCallingExecutionCancelled,
+    ChatRequest,
     _apply_response_format_if_needed,
     _build_stream_headers,
     _build_tab_resolution_headers,
@@ -43,12 +36,51 @@ from app.api.openai.shared import (
     _resolve_strict_tab_preset,
     _resolve_target_tab,
     _route_method_guard,
+    _RouteToolCallingExecutionCancelled,
     _run_tracked_route_tool_calling_worker,
     _should_fast_return_on_audio_media,
     _split_sse_done_frame,
     logger,
     router,
 )
+from app.api.openai_stop import (
+    apply_stop_sequences_to_text,
+    build_stop_sequence_stream_state,
+    filter_openai_stop_sse_chunk,
+    flush_openai_stop_state,
+    iter_openai_sse_payloads,
+)
+from app.api.stream_helpers import (
+    _dedupe_media_items,
+    _extract_assistant_content,
+    _extract_stream_error_message,
+    _is_single_choice_request,
+    _pack_done,
+    _pack_error,
+    _pack_error_done,
+)
+from app.api.streaming_response import RequestStreamingResponse as StreamingResponse
+from app.core.config import SSEFormatter, _request_context
+from app.services.error_metadata import build_error_response, resolve_error_metadata
+from app.services.request_lifecycle import (
+    get_max_request_execute_time_sec,
+    mark_request_hard_timeout,
+    request_finalization,
+    run_in_request_context,
+    wait_worker_queue_item,
+)
+from app.services.request_manager import RequestContext, RequestStatus, watch_client_disconnect
+from app.services.tool_calling import (
+    build_tool_completion_response,
+    complete_tool_calling_roundtrip_async,
+    decode_browser_non_stream_payload,
+    get_tool_calling_allow_media_postprocess,
+    has_tool_calling_request,
+    iter_tool_stream_chunks,
+    normalize_tool_request,
+    summarize_messages_for_debug,
+)
+
 
 @router.get("/tab-url/{url_token}/v1/models")
 async def list_models_with_exact_tab_url(

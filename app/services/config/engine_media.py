@@ -5,18 +5,20 @@
 """
 
 import copy
-from typing import Dict, Optional, Any
+from typing import Any, Dict, Optional
+
 from app.models.schemas import (
-    get_default_image_extraction_config,
-    get_default_file_paste_config,
-    get_default_prompt_padding_config,
     get_default_attachment_monitor_config,
+    get_default_file_paste_config,
+    get_default_image_extraction_config,
+    get_default_prompt_padding_config,
     get_default_send_confirmation_config,
     get_enabled_modalities,
     is_modality_enabled,
     normalize_modalities_config,
     normalize_modality_policy,
 )
+
 from .engine_common import DEFAULT_PRESET_NAME, _coerce_bool, _merge_config_patch, logger
 
 

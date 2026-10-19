@@ -6,18 +6,13 @@ app/services/config/managers.py - 配置子管理器
 - 图片预设管理
 """
 
+import copy
 import json
 import os
-import copy
+from typing import Any, Dict, List, Optional
+
 from app.core.config import get_logger
-from typing import Dict, List, Any, Optional
-
-from app.models.schemas import (
-    SelectorDefinition,
-    get_default_selector_definitions,
-    get_default_image_extraction_config
-)
-
+from app.models.schemas import SelectorDefinition, get_default_image_extraction_config, get_default_selector_definitions
 
 logger = get_logger("CFG_MGR")
 

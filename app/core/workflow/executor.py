@@ -10,33 +10,33 @@ app/core/workflow/executor.py - 工作流执行器
 
 import copy
 import json
-import time
 import random
+import time
 import uuid
-from typing import Generator, Dict, Any, Callable, Optional
+from typing import Any, Callable, Dict, Generator, Optional
 
 from app.core.config import (
-    logger,
-    SSEFormatter,
     ElementNotFoundError,
+    SSEFormatter,
     WorkflowError,
+    logger,
 )
+from app.core.driver import driver_for_tab
 from app.core.elements import ElementFinder
+from app.core.network_monitor import (
+    NetworkInterceptionTriggered,
+    NetworkMonitorError,
+    NetworkMonitorTerminalError,
+    NetworkMonitorTimeout,
+    create_network_monitor,
+)
 from app.core.page_capture import create_page_fetch_capture
 from app.core.request_transport import (
     normalize_request_transport_config,
 )
 from app.core.stream_monitor import StreamMonitor
 from app.services.arena_image_generation import ArenaImageGenerationError
-from app.core.network_monitor import (
-    create_network_monitor,
-    NetworkMonitorTimeout,
-    NetworkMonitorError,
-    NetworkMonitorTerminalError,
-    NetworkInterceptionTriggered,
-)
 
-from .attachment_monitor import AttachmentMonitor
 from .arena_send_watchdog import (
     ArenaConfirmedSendNoTarget,
     ArenaPageError,
@@ -44,14 +44,14 @@ from .arena_send_watchdog import (
     ArenaSendWatchdog,
     ArenaSendWatchdogCancelled,
 )
-from .text_input import TextInputHandler
-from .image_input import ImageInputHandler
+from .attachment_monitor import AttachmentMonitor
 from .executor_actions import WorkflowExecutorActionMixin
 from .executor_interaction import WorkflowExecutorInteractionMixin
 from .executor_request_transport import WorkflowExecutorRequestTransportMixin
 from .executor_send import WorkflowExecutorSendMixin
+from .image_input import ImageInputHandler
 from .script_loader import script_loader
-from app.core.driver import driver_for_tab
+from .text_input import TextInputHandler
 
 
 class WorkflowExecutor(

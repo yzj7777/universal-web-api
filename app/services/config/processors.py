@@ -7,23 +7,21 @@ app/services/config/processors.py - 配置处理器
 - AI 页面分析
 """
 
-import json
 import importlib.util
+import json
 import os
 import re
 import time
-from app.core.config import get_logger
-from app.utils.site_discovery import admitted_selectors
 from typing import Dict, Optional
-from urllib import request, error
+from urllib import error, request
 
 import bs4
 from bs4 import BeautifulSoup
 
-from app.core.config import AppConfig
+from app.core.config import AppConfig, get_logger
+from app.utils.site_discovery import admitted_selectors
 
 from .managers import GlobalConfigManager
-
 
 logger = get_logger("CFG_PRC")
 

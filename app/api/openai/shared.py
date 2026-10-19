@@ -4,26 +4,45 @@
 """
 
 import json
+import queue
 import random
 import re
-import time
-import queue
 import threading
+import time
 from pathlib import Path
-from typing import Optional, Any, Dict, List, Mapping
+from typing import Any, Dict, List, Mapping, Optional
 from urllib.parse import quote
+
 from fastapi import APIRouter, HTTPException
 from fastapi.params import Param
 from pydantic import BaseModel, Field, field_validator
-from app.core.config import _request_context, atomic_write_json, get_logger, SSEFormatter
-from app.services.request_manager import RequestContext, RequestStatus
-from app.services.request_lifecycle import TrackedWorkerExecutionCancelled, cleanup_worker_thread_after_request, put_worker_queue_item, run_tracked_blocking_call
-from app.api.openai_stop import iter_openai_sse_payloads
-from app.api.stream_helpers import _extract_chunk_media_items, _extract_delta_content_text, _is_absolute_request_timeout_error, _pack_done
-from app.utils.site_url import encode_tab_url_route_token, extract_remote_site_domain, get_canonical_route_domain, normalize_exact_tab_url, normalize_route_domain, route_domain_matches, tab_url_matches
-from app.utils.tab_route_groups import normalize_route_group_id
 
 from app.api.openai import runtime
+from app.api.openai_stop import iter_openai_sse_payloads
+from app.api.stream_helpers import (
+    _extract_chunk_media_items,
+    _extract_delta_content_text,
+    _is_absolute_request_timeout_error,
+    _pack_done,
+)
+from app.core.config import SSEFormatter, _request_context, atomic_write_json, get_logger
+from app.services.request_lifecycle import (
+    TrackedWorkerExecutionCancelled,
+    cleanup_worker_thread_after_request,
+    put_worker_queue_item,
+    run_tracked_blocking_call,
+)
+from app.services.request_manager import RequestContext, RequestStatus
+from app.utils.site_url import (
+    encode_tab_url_route_token,
+    extract_remote_site_domain,
+    get_canonical_route_domain,
+    normalize_exact_tab_url,
+    normalize_route_domain,
+    route_domain_matches,
+    tab_url_matches,
+)
+from app.utils.tab_route_groups import normalize_route_group_id
 
 router = APIRouter()
 logger = get_logger("API.TAB")
@@ -1203,7 +1222,7 @@ class ChatRequest(BaseModel):
     @field_validator('workflow_variables')
     @classmethod
     def validate_workflow_variables(cls, value):
-        from app.core.workflow.flow_runtime import validate_inputs, FlowValidationError
+        from app.core.workflow.flow_runtime import FlowValidationError, validate_inputs
         try:
             return validate_inputs(value)
         except FlowValidationError as exc:

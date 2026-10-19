@@ -8,14 +8,13 @@ app/services/extractor_manager.py - 提取器配置管理器
 - 支持导入/导出提取器配置
 """
 
-import os
-import json
 import copy
+import json
+import os
+from typing import Any, Dict, List, Optional
+
 from app.core.config import atomic_write_json, get_logger
-from typing import Dict, Optional, List, Any
-
-from app.core.extractors import ExtractorRegistry, BaseExtractor
-
+from app.core.extractors import BaseExtractor, ExtractorRegistry
 
 logger = get_logger("EXTRACT")
 

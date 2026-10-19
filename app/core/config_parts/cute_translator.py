@@ -3,6 +3,7 @@ app/core/config_parts/cute_translator.py - 展示层喵化翻译规则与逻辑�
 """
 import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
+
 from .browser_constants import BrowserConstants
 
 _REQUEST_FINISH_PATTERN = re.compile(r"^完成 \(([\d.]+)s\)$")

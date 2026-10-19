@@ -6,9 +6,10 @@
 
 import time
 import uuid
-from typing import Dict, List, Optional, Any, TYPE_CHECKING
-from app.utils.site_url import extract_remote_site_domain
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
 from app.services.command_engine_common import logger
+from app.utils.site_url import extract_remote_site_domain
 
 if TYPE_CHECKING:
     from app.core.tab_pool import TabSession  # noqa: F401

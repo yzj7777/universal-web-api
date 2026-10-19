@@ -1,24 +1,25 @@
 # app/core/browser/connection.py
 
+import contextlib
 import json
 import os
 import socket
 import threading
 import time
-import contextlib
-from typing import Optional, List, Dict, Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from app.core.driver.drission_internals import connect_existing_browser
-from app.core.config import logger, BrowserConstants, BrowserConnectionError, SSEFormatter
 from app.core import cdp_hygiene
+from app.core.config import BrowserConnectionError, BrowserConstants, SSEFormatter, logger
 from app.core.driver import browser_driver
+from app.core.driver.drission_internals import connect_existing_browser
 
 # P0-2 / P0-4：运行期 CDP 卫生补丁（释放 run_js 对象结果、Network.enable 缓冲上限）
 cdp_hygiene.install()
 
 if TYPE_CHECKING:
-    from .main import BrowserCore
     from app.core.tab_pool import TabPoolManager, TabSession
+
+    from .main import BrowserCore
 
 
 def _looks_like_transient_local_debug_error(error: Any) -> bool:
@@ -41,8 +42,8 @@ def _inspect_headless_or_windowless_browser(port: int, timeout: float = 0.5) -> 
     探测指定端口的 Chromium 浏览器是否处于无头(Headless)或无窗口/缺少页面标签页状态。
     返回 None 表示不是无头（或者端口未开放/非 Chromium）。
     """
-    import urllib.request
     import json
+    import urllib.request
 
     port_int = int(port)
     # 显式使用空 ProxyHandler，避免系统或环境变量代理(如 HTTP_PROXY)拦截 loopback 探测

@@ -10,7 +10,6 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _SITE_RULES_FILE = Path(
     os.getenv("SITE_RULES_FILE", str(_PROJECT_ROOT / "config" / "site_rules.json"))

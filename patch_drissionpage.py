@@ -5,8 +5,8 @@
 import importlib
 import inspect
 import shutil
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 RECOVERY_GUARD_MARKER = "# CODEX_LISTENER_RECOVERY_GUARD_V2"
 STREAM_CAPTURE_GUARD_MARKER = "# CODEX_LISTENER_STREAM_CAPTURE_V2"

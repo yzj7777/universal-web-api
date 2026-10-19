@@ -27,7 +27,6 @@ from app.utils.remote_resource import (
     remote_url_origin,
 )
 
-
 DEFAULT_IMAGE_ACCEPT = "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"
 REMOTE_IMAGE_URL_TRAILING_WRAPPERS = ")]}"
 REMOTE_IMAGE_URL_TRAILING_SENTENCE_PUNCTUATION = ".,;:!?"

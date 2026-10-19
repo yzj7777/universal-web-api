@@ -20,6 +20,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
+
 def _get_store() -> Any:
     from app.services import command_result_store
     return command_result_store

@@ -2,7 +2,7 @@ import copy
 import threading
 import time
 import uuid
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from app.core.config import get_logger
 

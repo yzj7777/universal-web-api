@@ -3,20 +3,17 @@
 from __future__ import annotations
 
 import ipaddress
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from urllib.parse import urlparse
-
-from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.core import get_browser
 from app.core.config import AppConfig, get_logger
+from app.core.driver import browser_driver, driver_for_tab
 from app.core.http_security import is_trusted_local_request
 from app.utils.browser_profile_identity import resolve_tab_browser_profile
-from app.core.driver import browser_driver, driver_for_tab
-
 
 logger = get_logger("API.BROWSER")
 router = APIRouter(prefix="/api/browser", tags=["browser"])

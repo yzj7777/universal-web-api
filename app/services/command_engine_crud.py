@@ -6,7 +6,8 @@
 
 import copy
 import uuid
-from typing import Dict, List, Optional, Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
 from app.services.command_defs import _new_command_id, get_default_command
 from app.services.command_engine_common import logger
 

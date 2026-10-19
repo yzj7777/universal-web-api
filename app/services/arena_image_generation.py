@@ -17,18 +17,25 @@ from typing import Any, Iterable, Optional
 from urllib.parse import urlsplit
 
 from app.core.config import logger
+from app.core.driver import driver_for_tab
 from app.utils.image_validation import (
     extract_media_item_bytes as _common_extract_media_item_bytes,
+)
+from app.utils.image_validation import (
     get_current_page_url as current_page_url,
+)
+from app.utils.image_validation import (
     image_signatures,
     read_image_bytes,
     read_local_image_bytes,
-    read_uploaded_image_bytes as _common_read_uploaded_image_bytes,
     same_image,
+)
+from app.utils.image_validation import (
+    read_uploaded_image_bytes as _common_read_uploaded_image_bytes,
+)
+from app.utils.image_validation import (
     validate_generated_images as _common_validate_generated_images,
 )
-from app.core.driver import driver_for_tab
-
 
 ARENA_NATIVE_STOP_SELECTOR = 'css:button[aria-label="Stop generation"]'
 ARENA_PROMPT_REJECTED_CODE = "arena_prompt_rejected"
@@ -936,7 +943,6 @@ def validate_generated_images(
 
 
 from app.services.arena_image_stream_observer import ArenaImageStreamObserver
-
 
 __all__ = [
     "ARENA_IMAGE_GENERATION_FAILED_CODE",

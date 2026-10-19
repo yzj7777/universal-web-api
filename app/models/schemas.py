@@ -8,7 +8,7 @@ schemas.py - 数据模型和 API Schema 定义
 """
 
 import copy
-from typing import TypedDict, List, Optional, Literal, Dict, Any, Union
+from typing import Any, Dict, List, Literal, Optional, TypedDict, Union
 
 try:  # Python 3.11+
     from typing import NotRequired

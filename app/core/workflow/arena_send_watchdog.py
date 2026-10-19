@@ -9,15 +9,14 @@ was accepted.
 from __future__ import annotations
 
 import json
-from collections import Counter
 import time
+from collections import Counter
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Mapping, Optional
 from urllib.parse import urlparse
 
 from app.core.config import logger
 from app.core.driver import driver_for_tab
-
 
 ARENA_SEND_NO_TARGET_AFTER_RETRY = "arena_send_no_target_after_retry"
 ARENA_PAGE_ERROR = "arena_page_error"

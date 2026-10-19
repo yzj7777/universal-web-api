@@ -9,8 +9,8 @@ app/core/extractors/hybrid_mode.py - 混合智能提取器
 
 from typing import Any
 
-from app.core.extractors.base import BaseExtractor
 from app.core.driver import as_element
+from app.core.extractors.base import BaseExtractor
 
 
 class HybridExtractor(BaseExtractor):

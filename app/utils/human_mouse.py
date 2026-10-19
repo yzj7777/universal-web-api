@@ -17,14 +17,13 @@ v5.10 改进：
 - idle_drift 频率更不规则（偶尔静止、偶尔连续微动）
 """
 
-import time
 import math
 import random
-from typing import Tuple, Optional, Callable
+import time
+from typing import Callable, Optional, Tuple
 
 from app.core.config import logger
 from app.core.driver import driver_for_tab
-
 
 # ================= CDP 鼠标事件派发 =================
 

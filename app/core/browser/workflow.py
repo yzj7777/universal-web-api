@@ -1,34 +1,23 @@
 # app/core/browser/workflow.py
 
-import json
-import time
 import contextlib
+import json
 import random
 import re
-from typing import Optional, List, Dict, Any, Generator, Callable, Mapping, TYPE_CHECKING
+import time
+from typing import TYPE_CHECKING, Any, Callable, Dict, Generator, List, Mapping, Optional
 
 from app.core.config import (
-    logger,
     BrowserConstants,
     ElementNotFoundError,
-    WorkflowError,
     MessageValidator,
+    WorkflowError,
+    logger,
 )
-from app.utils.site_url import extract_remote_site_domain, tab_url_matches
-from app.utils.attachments import attachment_scope, AttachmentError, has_attachments
+from app.core.driver import driver_for_tab
 from app.core.page_lifecycle import BACKGROUND_WAKE_CDP_TIMEOUT
+from app.core.tab_pool import TabSession
 from app.core.workflow import WorkflowExecutor
-from app.core.workflow.flow_runtime import FlowProgram, has_control_flow, validate_workflow, capture_page_state
-from app.core.workflow.error_handlers import (
-    get_workflow_retry_handler,
-    is_retriable_workflow_error,
-)
-from app.core.workflow.arena_send_watchdog import (
-    ARENA_SEND_NO_TARGET_AFTER_RETRY,
-    ArenaSendRetryRefreshError,
-    ArenaSendWatchdogCancelled,
-    refresh_arena_page_for_retry,
-)
 from app.core.workflow.arena_direct_guard import (
     ARENA_DIRECT_UNEXPECTED_BATTLE_REDIRECT,
     ArenaDirectRecoveryError,
@@ -40,8 +29,18 @@ from app.core.workflow.arena_direct_guard import (
     resolve_arena_direct_recovery_url,
     workflow_has_new_chat_step,
 )
+from app.core.workflow.arena_send_watchdog import (
+    ARENA_SEND_NO_TARGET_AFTER_RETRY,
+    ArenaSendRetryRefreshError,
+    ArenaSendWatchdogCancelled,
+    refresh_arena_page_for_retry,
+)
+from app.core.workflow.error_handlers import (
+    get_workflow_retry_handler,
+    is_retriable_workflow_error,
+)
+from app.core.workflow.flow_runtime import FlowProgram, capture_page_state, has_control_flow, validate_workflow
 from app.core.workflow.input_chunking import PromptChunk, plan_prompt_chunks
-from app.core.tab_pool import TabSession
 from app.models.schemas import get_modality_run_policy, is_modality_enabled
 from app.services.arena_direct_models import (
     get_model_catalog_preset,
@@ -54,8 +53,9 @@ from app.services.arena_image_generation import (
     is_arena_image_generation_request,
     validate_generated_images,
 )
+from app.utils.attachments import AttachmentError, attachment_scope, has_attachments
 from app.utils.image_validation import filter_reference_images
-from app.core.driver import driver_for_tab
+from app.utils.site_url import extract_remote_site_domain, tab_url_matches
 
 if TYPE_CHECKING:
     from .main import BrowserCore

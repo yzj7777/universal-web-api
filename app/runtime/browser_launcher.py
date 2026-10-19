@@ -307,6 +307,7 @@ def focus_browser_window_for_port(port: int) -> bool:
     try:
         import ctypes
         from ctypes import wintypes
+
         import psutil
     except Exception as e:
         _log(f"[DEBUG] 跳过浏览器唤起：{e}")

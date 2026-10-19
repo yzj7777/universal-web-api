@@ -8,12 +8,20 @@ their dispatch APIs small and generic.
 from .base import PageFetchCapture
 from .registry import (
     create_page_fetch_capture as _create_page_fetch_capture,
+)
+from .registry import (
     register_page_fetch_capture,
 )
 from .request_transport import (
     execute_page_request_transport as _execute_page_request_transport,
+)
+from .request_transport import (
     get_page_request_transport_profile as _get_page_request_transport_profile,
+)
+from .request_transport import (
     get_page_request_transport_profiles as _get_page_request_transport_profiles,
+)
+from .request_transport import (
     register_page_request_transport,
 )
 

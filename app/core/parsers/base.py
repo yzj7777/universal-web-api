@@ -5,7 +5,7 @@ app/core/parsers/base.py - 响应解析器基类
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
 
 class ResponseParser(ABC):

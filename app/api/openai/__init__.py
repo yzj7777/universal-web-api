@@ -9,10 +9,12 @@
 所有模块共享 ``shared.router``，URL 与注册顺序保持不变。
 """
 
-from app.api.openai import shared  # noqa: F401
-from app.api.openai import tab  # noqa: F401
-from app.api.openai import url  # noqa: F401
-from app.api.openai import group  # noqa: F401
-from app.api.openai import tab_url  # noqa: F401
+from app.api.openai import (
+    group,  # noqa: F401
+    shared,  # noqa: F401
+    tab,  # noqa: F401
+    tab_url,  # noqa: F401
+    url,  # noqa: F401
+)
 
 router = shared.router

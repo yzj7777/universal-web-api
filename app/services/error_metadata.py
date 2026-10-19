@@ -11,15 +11,16 @@ from __future__ import annotations
 
 import dataclasses
 from typing import Any, Dict, Optional, Set
+
 from fastapi.responses import JSONResponse
 
-from app.services.arena_image_generation import (
-    ARENA_NON_RETRYABLE_CODES,
-    ARENA_PROMPT_REJECTED_CODE,
-)
 from app.core.workflow.arena_send_watchdog import (
     ARENA_PAGE_ERROR,
     ARENA_SEND_NO_TARGET_AFTER_RETRY,
+)
+from app.services.arena_image_generation import (
+    ARENA_NON_RETRYABLE_CODES,
+    ARENA_PROMPT_REJECTED_CODE,
 )
 
 

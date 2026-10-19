@@ -7,10 +7,9 @@ app/core/extractors/registry.py - 提取器注册中心
 
 import importlib
 import logging
-from typing import Dict, Type, Optional, List
+from typing import Dict, List, Optional, Type
 
 from app.core.extractors.base import BaseExtractor
-
 
 logger = logging.getLogger(__name__)
 

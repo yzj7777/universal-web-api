@@ -6,7 +6,8 @@ import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from .env_config import AppConfig, PROJECT_ROOT
+
+from .env_config import PROJECT_ROOT, AppConfig
 
 
 class BrowserConstants:

@@ -13,9 +13,8 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 from app.core.config import logger
-from app.utils.site_url import extract_remote_site_domain, route_domain_matches
 from app.core.driver import driver_for_tab
-
+from app.utils.site_url import extract_remote_site_domain, route_domain_matches
 
 ARENA_DIRECT_MODEL_PREFIX = "arena.ai/direct/"
 ARENA_DIRECT_MODEL_CACHE_TTL = 300.0

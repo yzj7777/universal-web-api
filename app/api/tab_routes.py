@@ -10,17 +10,23 @@
 本模块保留原有模块级名字的再导出，``tab_routes.<name>`` 仍可访问。
 """
 
+import app.api.openai.group  # noqa: F401
 import app.api.openai.shared  # noqa: F401
 import app.api.openai.tab  # noqa: F401
-import app.api.openai.url  # noqa: F401
-import app.api.openai.group  # noqa: F401
 import app.api.openai.tab_url  # noqa: F401
-
-from app.api.openai.shared import router
+import app.api.openai.url  # noqa: F401
+from app.api.openai.group import (
+    _collect_models_for_route_group,
+    _get_route_groups_from_config,
+    _get_tab_pool_route_groups,
+    _resolve_route_group,
+    chat_with_route_group,
+    chat_with_route_group_and_preset,
+    list_models_with_route_group,
+    list_models_with_route_group_and_preset,
+)
 from app.api.openai.runtime import cancel_storm_guard, get_browser, request_manager
-
 from app.api.openai.shared import (
-    ChatRequest,
     DEFAULT_TAB_ROUTE_METHODS,
     FOLLOW_DEFAULT_PRESET,
     HEADER_VALUE_QUOTE_SAFE,
@@ -32,7 +38,7 @@ from app.api.openai.shared import (
     TAB_POOL_ALLOCATION_OPTIONS,
     TAB_ROUTE_METHOD_OPTIONS,
     TAB_SELECTOR_OPTIONS,
-    _RouteToolCallingExecutionCancelled,
+    ChatRequest,
     _apply_response_format_if_needed,
     _attach_preset_info_to_tabs,
     _browser_config_lock,
@@ -101,6 +107,7 @@ from app.api.openai.shared import (
     _route_method_guard,
     _route_round_robin_cursor,
     _route_round_robin_lock,
+    _RouteToolCallingExecutionCancelled,
     _run_tracked_route_tool_calling_worker,
     _select_round_robin_tab,
     _should_fast_return_on_audio_media,
@@ -115,6 +122,7 @@ from app.api.openai.shared import (
     _write_model_name_overrides_unlocked,
     _write_preset_overrides_unlocked,
     logger,
+    router,
 )
 from app.api.openai.tab import (
     _chat_with_resolved_tab,
@@ -128,6 +136,20 @@ from app.api.openai.tab import (
     _stream_with_tab_index,
     chat_with_tab,
     list_models_with_tab,
+)
+from app.api.openai.tab_url import (
+    _chat_with_exact_url,
+    _complete_tool_calling_with_exact_url,
+    _execute_browser_non_stream_for_exact_url,
+    _non_stream_tool_calling_with_exact_url,
+    _non_stream_with_exact_url,
+    _run_tool_calling_async_for_exact_url,
+    _stream_tool_calling_with_exact_url,
+    _stream_with_exact_url,
+    chat_with_exact_tab_url,
+    chat_with_exact_tab_url_and_preset,
+    list_models_with_exact_tab_url,
+    list_models_with_exact_tab_url_and_preset,
 )
 from app.api.openai.url import (
     _chat_with_route_domain,
@@ -143,30 +165,6 @@ from app.api.openai.url import (
     chat_with_route_domain_and_preset,
     list_models_with_route_domain,
     list_models_with_route_domain_and_preset,
-)
-from app.api.openai.group import (
-    _collect_models_for_route_group,
-    _get_route_groups_from_config,
-    _get_tab_pool_route_groups,
-    _resolve_route_group,
-    chat_with_route_group,
-    chat_with_route_group_and_preset,
-    list_models_with_route_group,
-    list_models_with_route_group_and_preset,
-)
-from app.api.openai.tab_url import (
-    _chat_with_exact_url,
-    _complete_tool_calling_with_exact_url,
-    _execute_browser_non_stream_for_exact_url,
-    _non_stream_tool_calling_with_exact_url,
-    _non_stream_with_exact_url,
-    _run_tool_calling_async_for_exact_url,
-    _stream_tool_calling_with_exact_url,
-    _stream_with_exact_url,
-    chat_with_exact_tab_url,
-    chat_with_exact_tab_url_and_preset,
-    list_models_with_exact_tab_url,
-    list_models_with_exact_tab_url_and_preset,
 )
 
 __all__ = [

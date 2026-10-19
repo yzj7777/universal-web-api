@@ -9,13 +9,16 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from app.core.driver import as_element, driver_for_tab
 from app.services.arena_image_generation import (
     image_signatures as _image_signatures,
+)
+from app.services.arena_image_generation import (
     read_image_bytes as _read_image_bytes,
+)
+from app.services.arena_image_generation import (
     same_image as _same_image,
 )
-from app.core.driver import as_element, driver_for_tab
-
 
 GPT_IMAGE_MARKERS = (
     b"gpt-image",

@@ -16,8 +16,8 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.core.config import logger
-from .base import ResponseParser
 
+from .base import ResponseParser
 
 # ----------------------------------------------------------
 # 私有工具

@@ -187,7 +187,7 @@ def _normalize_response_message_content(content: Any) -> Any:
                 leading_text_parts.append(text)
             continue
 
-        from app.utils.attachments import normalize_attachment_part, AttachmentError
+        from app.utils.attachments import AttachmentError, normalize_attachment_part
         try:
             attachment = normalize_attachment_part(part)
         except AttachmentError as exc:

@@ -8,29 +8,29 @@ app/core/network_monitor.py - 网络响应拦截监听器
 - 失败时触发回退到 DOM 模式
 """
 
-import time
-import logging
 import json
+import logging
 import re
+import time
 from collections import deque
-from typing import Generator, Optional, Dict, Callable, Any
 from pathlib import Path
+from typing import Any, Callable, Dict, Generator, Optional
 
-from app.core.config import (
-    logger,
-    SSEFormatter,
-    BrowserConstants,
-    sanitize_sensitive_data,
-    DEFAULT_LOG_DIR,
-)
 from app.core.background_image_downloader import (
     background_image_downloader,
     build_image_download_request_context,
     get_image_download_partition,
     normalize_remote_image_url,
 )
-from app.core.parsers import ParserRegistry, ResponseParser
+from app.core.config import (
+    DEFAULT_LOG_DIR,
+    BrowserConstants,
+    SSEFormatter,
+    logger,
+    sanitize_sensitive_data,
+)
 from app.core.driver import driver_for_tab
+from app.core.parsers import ParserRegistry, ResponseParser
 
 
 def _network_debug_capture_retention_seconds() -> float:

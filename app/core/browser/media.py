@@ -1,27 +1,21 @@
 # app/core/browser/media.py
 
+import base64
+import binascii
 import json
-import time
 import os
 import shutil
 import subprocess
-import base64
+import time
 import uuid
-import binascii
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 from urllib.parse import urlparse, urlsplit
-from typing import Optional, List, Dict, Any, Callable, TYPE_CHECKING
+
 import requests
 
 from app import paths
-from app.core.config import logger, AppConfig, BrowserConstants
-from app.models.schemas import (
-    get_enabled_modalities,
-    get_modality_policy,
-    get_modality_run_policy,
-    is_modality_enabled,
-)
 from app.core.background_image_downloader import (
     background_image_downloader,
     build_image_download_partition,
@@ -29,19 +23,26 @@ from app.core.background_image_downloader import (
     get_image_download_partition,
     normalize_remote_image_url,
 )
-from app.utils.remote_resource import get_public_remote_resource
+from app.core.config import AppConfig, BrowserConstants, logger
+from app.core.driver import as_element, driver_for_tab
+from app.core.tab_pool import TabSession
+from app.models.schemas import (
+    get_enabled_modalities,
+    get_modality_policy,
+    get_modality_run_policy,
+    is_modality_enabled,
+)
+from app.utils.image_validation import filter_reference_images
 from app.utils.media_safety import (
-    IMAGE_EXT_BY_MIME,
     AUDIO_EXT_BY_MIME,
+    IMAGE_EXT_BY_MIME,
     VIDEO_EXT_BY_MIME,
     choose_media_extension,
     is_active_content_mime,
     looks_like_active_content,
 )
+from app.utils.remote_resource import get_public_remote_resource
 from app.utils.site_url import extract_remote_site_domain
-from app.utils.image_validation import filter_reference_images
-from app.core.tab_pool import TabSession
-from app.core.driver import as_element, driver_for_tab
 
 if TYPE_CHECKING:
     from .main import BrowserCore
@@ -3015,8 +3016,8 @@ class BrowserMediaMixin:
         """
         import base64
         import uuid
-        from pathlib import Path
         from datetime import datetime
+        from pathlib import Path
 
         result = []
 

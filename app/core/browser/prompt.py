@@ -4,9 +4,9 @@ import json
 import os
 import random
 import re
-from typing import Optional, List, Dict, Any, Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
-from app.core.config import logger, BrowserConstants
+from app.core.config import BrowserConstants, logger
 from app.utils.image_handler import extract_images_from_messages
 
 if TYPE_CHECKING:

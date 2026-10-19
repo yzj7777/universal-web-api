@@ -26,7 +26,6 @@ from typing import Any, Callable, Dict, Optional, Tuple
 
 from app.core.config import AppConfig, logger
 
-
 # DrissionPage/CDP 调用可能在底层连接断开时永久阻塞。超时后 daemon
 # 线程无法被强制终止，因此限制同时存活的超时调用数量，避免每次异常
 # 都累积一个永不退出的线程。

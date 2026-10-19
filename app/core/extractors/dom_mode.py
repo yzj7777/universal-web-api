@@ -7,8 +7,8 @@ app/core/extractors/dom_mode.py - DOM 直接提取器
 
 from typing import Any
 
-from app.core.extractors.base import BaseExtractor
 from app.core.driver import as_element
+from app.core.extractors.base import BaseExtractor
 
 
 class DOMDirectExtractor(BaseExtractor):

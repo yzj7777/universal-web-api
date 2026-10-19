@@ -11,71 +11,17 @@
 """
 
 import app.api.system.common  # noqa: F401
+import app.api.system.diagnostics  # noqa: F401
 import app.api.system.health  # noqa: F401
 import app.api.system.settings  # noqa: F401
 import app.api.system.updates  # noqa: F401
-import app.api.system.diagnostics  # noqa: F401
-
-from app.api.system.common import router
-
 from app.api.system.common import (
     _DYNAMIC_SELECTOR_CLASS_RE,
     _NUMERIC_ENV_KEYS,
     _load_env_config_from_file,
     _read_json_object_or_400,
     logger,
-)
-from app.api.system.health import (
-    _public_health_response,
-    clear_logs,
-    get_logs,
-    health_check,
-)
-from app.api.system.settings import (
-    DEFAULT_BROWSER_CONSTANTS,
-    _REDACTED_PLACEHOLDERS,
-    _build_settings_backup_bundle,
-    _env_value_is_true,
-    _export_sites_config,
-    _read_json_file,
-    _restore_file_snapshot,
-    _restore_file_snapshots,
-    _schedule_service_restart,
-    _serialize_env_value,
-    _snapshot_file,
-    _strip_redacted_env_import,
-    _validate_env_config_payload,
-    _validate_settings_backup_files,
-    _write_env_config_file,
-    _write_json_file,
-    _write_text_file_atomic,
-    export_settings_backup,
-    get_browser_constants,
-    get_env_config,
-    get_update_preserve_settings,
-    import_settings_backup,
-    save_browser_constants,
-    save_env_config,
-    save_update_preserve,
-)
-from app.api.system.updates import (
-    _apply_release_list_update_check,
-    _build_update_check_payload,
-    _consume_bootstrap_update_check,
-    _get_update_check_state,
-    _run_update_check,
-    _set_update_check_state,
-    _startup_update_check_scheduled,
-    _update_check_lock,
-    _update_check_state,
-    _version_switch_lock,
-    _version_switch_state,
-    get_releases,
-    get_update_check,
-    get_version_switch_status,
-    refresh_update_check,
-    schedule_startup_update_check,
-    switch_version,
+    router,
 )
 from app.api.system.diagnostics import (
     _DISK_USAGE_CACHE,
@@ -130,6 +76,58 @@ from app.api.system.diagnostics import (
     get_system_stats,
     request_status,
     test_selector,
+)
+from app.api.system.health import (
+    _public_health_response,
+    clear_logs,
+    get_logs,
+    health_check,
+)
+from app.api.system.settings import (
+    _REDACTED_PLACEHOLDERS,
+    DEFAULT_BROWSER_CONSTANTS,
+    _build_settings_backup_bundle,
+    _env_value_is_true,
+    _export_sites_config,
+    _read_json_file,
+    _restore_file_snapshot,
+    _restore_file_snapshots,
+    _schedule_service_restart,
+    _serialize_env_value,
+    _snapshot_file,
+    _strip_redacted_env_import,
+    _validate_env_config_payload,
+    _validate_settings_backup_files,
+    _write_env_config_file,
+    _write_json_file,
+    _write_text_file_atomic,
+    export_settings_backup,
+    get_browser_constants,
+    get_env_config,
+    get_update_preserve_settings,
+    import_settings_backup,
+    save_browser_constants,
+    save_env_config,
+    save_update_preserve,
+)
+from app.api.system.updates import (
+    _apply_release_list_update_check,
+    _build_update_check_payload,
+    _consume_bootstrap_update_check,
+    _get_update_check_state,
+    _run_update_check,
+    _set_update_check_state,
+    _startup_update_check_scheduled,
+    _update_check_lock,
+    _update_check_state,
+    _version_switch_lock,
+    _version_switch_state,
+    get_releases,
+    get_update_check,
+    get_version_switch_status,
+    refresh_update_check,
+    schedule_startup_update_check,
+    switch_version,
 )
 
 __all__ = [

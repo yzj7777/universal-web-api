@@ -1,5 +1,6 @@
 """Real cancellation scopes used by Starlette, not only asyncio Task.cancel()."""
 import asyncio
+import importlib
 import json
 import threading
 import time
@@ -12,7 +13,7 @@ import pytest
 from app.api import chat, tab_routes
 from app.api.openai import runtime as tab_runtime
 from app.core.config import _request_context
-import importlib
+
 rm_module = importlib.import_module('app.services.request_manager')
 from app.services.request_manager import RequestContext, RequestStatus
 
@@ -196,6 +197,7 @@ def test_finalization_survives_a_second_raw_task_cancel_and_schedules_leak_check
 
 def test_circuit_blocks_bursts_before_creating_requests_and_recovers(monkeypatch):
     from fastapi import HTTPException
+
     from app.services.request_manager import CancelStormGuard
     guard = CancelStormGuard()
     now = [100.0]
@@ -244,8 +246,8 @@ def test_stop_after_real_output_resets_guard_and_finish_is_not_double_counted(mo
 
 
 def test_keepalive_is_not_output_and_ordinary_failure_is_not_transport_cancel(monkeypatch):
-    from app.services.request_manager import CancelStormGuard
     from app.core.config import SSEFormatter
+    from app.services.request_manager import CancelStormGuard
     guard = CancelStormGuard()
     monkeypatch.setattr(rm_module, 'cancel_storm_guard', guard)
     manager = tab_routes.request_manager
@@ -275,8 +277,9 @@ def test_guard_storage_is_bounded_and_fingerprint_does_not_leak_credentials():
 
 @pytest.mark.parametrize('route', ['chat', 'tab', 'model_name', 'domain', 'url', 'url_preset'])
 def test_open_circuit_rejects_at_entry_before_browser_or_request_history(monkeypatch, route):
-    from app.services.request_manager import CancelStormGuard
     from fastapi import HTTPException
+
+    from app.services.request_manager import CancelStormGuard
     guard = CancelStormGuard()
     request = SimpleNamespace(client=SimpleNamespace(host='127.0.0.1'),headers={})
     fp = guard.get_client_fingerprint(request)
@@ -347,6 +350,7 @@ def test_cleanup_exception_cannot_skip_history_or_request_context_reset(monkeypa
 def test_http_retry_after_is_preserved_and_rejected_retries_do_not_allocate(monkeypatch):
     from fastapi import FastAPI, Request
     from httpx import ASGITransport, AsyncClient
+
     from app.services.request_manager import CancelStormGuard
     guard = CancelStormGuard()
     fp = guard.get_client_fingerprint(SimpleNamespace(client=SimpleNamespace(host='127.0.0.1'), headers={'user-agent':'cancel-repro'}))
@@ -373,6 +377,7 @@ def test_http_retry_after_is_preserved_and_rejected_retries_do_not_allocate(monk
 
 def test_cleanup_stays_bounded_when_default_executor_is_saturated():
     from concurrent.futures import ThreadPoolExecutor
+
     from app.services.request_lifecycle import cleanup_worker_thread_after_request
     async def exercise():
         loop = asyncio.get_running_loop()

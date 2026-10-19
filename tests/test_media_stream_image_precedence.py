@@ -543,8 +543,9 @@ def test_image_extractor_distinguishes_different_data_uris_sharing_long_prefix()
 
 
 def test_persist_remote_media_urls_to_local_uses_image_config_timeout(tmp_path) -> None:
+    from unittest.mock import MagicMock, patch
+
     from app.core.browser.media import BrowserMediaMixin
-    from unittest.mock import patch, MagicMock
 
     harness = BrowserMediaMixin()
     tab = MagicMock()
@@ -581,8 +582,9 @@ def test_persist_remote_media_urls_to_local_uses_image_config_timeout(tmp_path) 
 
 
 def test_persist_remote_media_urls_to_local_uses_signed_public_partition_for_r2_url(tmp_path) -> None:
+    from unittest.mock import MagicMock, patch
+
     from app.core.browser.media import BrowserMediaMixin
-    from unittest.mock import patch, MagicMock
 
     harness = BrowserMediaMixin()
     tab = MagicMock()

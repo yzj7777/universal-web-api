@@ -4,10 +4,11 @@
 实例状态都在 ConfigEngine.__init__（engine.py）里初始化。
 """
 
-import json
 import copy
-from typing import Dict, Optional, List, Any
-from .engine_common import DEFAULT_PRESET_NAME, DEFAULT_WORKFLOW, _MISSING, logger
+import json
+from typing import Any, Dict, List, Optional
+
+from .engine_common import _MISSING, DEFAULT_PRESET_NAME, DEFAULT_WORKFLOW, logger
 
 
 class ConfigPresetsMixin:
@@ -458,8 +459,9 @@ class ConfigPresetsMixin:
         config_path = Path("config/preset_overrides.local.json")
         if not config_path.exists():
             return 0
-        from app.utils.site_url import extract_remote_site_domain
         import json
+
+        from app.utils.site_url import extract_remote_site_domain
         try:
             with open(config_path, encoding="utf-8-sig") as f:
                 payload = json.load(f)

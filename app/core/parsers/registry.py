@@ -6,9 +6,10 @@ app/core/parsers/registry.py - 解析器注册中心
 
 import importlib
 import sys
-from typing import Dict, Type, Optional, List
+from typing import Dict, List, Optional, Type
 
 from app.core.config import logger
+
 from .base import ResponseParser
 
 

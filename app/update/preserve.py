@@ -9,7 +9,6 @@ from typing import Any, Dict, List
 
 from app.paths import CONFIG_DIR
 
-
 UPDATE_SETTINGS_FILE = Path(CONFIG_DIR) / "update_settings.json"
 
 

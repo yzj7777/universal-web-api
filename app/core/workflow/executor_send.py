@@ -9,10 +9,11 @@ import time
 from typing import Any, Dict, Optional
 
 from app.core.config import BrowserConstants, WorkflowError, logger
+from app.core.driver import driver_for_tab
 from app.core.elements import ElementFinder
 from app.services.arena_image_generation import is_arena_page_url
+
 from .attachment_monitor import AttachmentMonitor
-from app.core.driver import driver_for_tab
 
 
 class WorkflowExecutorSendMixin:

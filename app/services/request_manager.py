@@ -9,22 +9,22 @@ v2.0 改动：
 
 import asyncio
 import atexit
-import threading
+import copy
+import hashlib
 import json
+import math
 import os
+import random
+import re
+import threading
 import time
 import uuid
-import re
-import math
-import hashlib
-import copy
-import random
-from enum import Enum
-from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List
 from collections import OrderedDict
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, List, Optional
 
-from app.core.config import BrowserConstants, get_logger, _request_context
+from app.core.config import BrowserConstants, _request_context, get_logger
 from app.services.sse_utils import iter_sse_payloads
 from app.utils.site_url import get_canonical_route_domain
 

@@ -1,9 +1,12 @@
 """Dashboard smoke test for upgraded shipped configuration; requires local :8000.
 API writes are intercepted; no AI login or provider traffic.
 """
-import re,hashlib
+import hashlib
+import re
 from pathlib import Path
-from playwright.sync_api import sync_playwright,expect
+
+from playwright.sync_api import expect, sync_playwright
+
 root=Path(__file__).resolve().parents[2];before=hashlib.sha256((root/'config/sites.json').read_bytes()).hexdigest();errors=[];writes=[]
 with sync_playwright() as p:
  b=p.chromium.launch();page=b.new_page(viewport={'width':1512,'height':1120})

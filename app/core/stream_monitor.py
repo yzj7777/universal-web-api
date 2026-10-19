@@ -12,17 +12,18 @@ import json
 import os
 import re
 import time
-from typing import Generator, Optional, Callable, Tuple, Dict, List, Any
+from typing import Any, Callable, Dict, Generator, List, Optional, Tuple
 from urllib.parse import urlparse
 
-from app.core.driver import as_element, driver_for_tab
-from app.core.config import logger, BrowserConstants, SSEFormatter
 from app.core.background_image_downloader import (
     background_image_downloader,
     build_image_download_request_context,
     get_image_download_partition,
     normalize_remote_image_url,
 )
+from app.core.cdp_hygiene import decode_js_json
+from app.core.config import BrowserConstants, SSEFormatter, logger
+from app.core.driver import as_element, driver_for_tab
 from app.core.elements import ElementFinder
 from app.core.extractors.base import BaseExtractor
 from app.core.extractors.deep_mode import DeepBrowserExtractor
@@ -30,7 +31,6 @@ from app.core.stream_observer import (
     StreamObserver,
     get_stream_observer_factories,
 )
-from app.core.cdp_hygiene import decode_js_json
 from app.core.stream_snapshot import (
     SNAPSHOT_JS,
     build_snapshot_config,

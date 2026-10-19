@@ -12,10 +12,10 @@ import json
 import math
 import re
 import time
-from urllib.parse import quote
 from typing import Any
+from urllib.parse import quote
 
-from app.core.config import WorkflowError, WorkflowCancelledError
+from app.core.config import WorkflowCancelledError, WorkflowError
 from app.core.driver import as_element
 
 CONTROL_ACTIONS = frozenset({"SET", "CAPTURE", "IF", "SWITCH", "GROUP", "GUARD", "TRY", "LABEL"})

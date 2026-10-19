@@ -1,13 +1,15 @@
 """``app/api/system`` 的 updates 分组（原 app/api/system.py 的一部分）。"""
 
+import asyncio
 import json
 import os
-import time
-import asyncio
 import threading as _threading
-from typing import Optional, Any, Dict
+import time
+from typing import Any, Dict, Optional
+
+from fastapi import Depends, HTTPException, Request
+
 from app import __version__ as APP_VERSION
-from fastapi import Request, HTTPException, Depends
 from app.api.deps import verify_dashboard_auth as verify_auth
 from app.api.system.common import (
     _read_json_object_or_400,
@@ -191,7 +193,7 @@ async def get_releases(
 ):
     """获取 GitHub Release 列表（供控制面板手动选择版本）"""
     try:
-        from app.update.engine import fetch_all_releases, get_current_version, normalize_version, DEFAULT_REPO
+        from app.update.engine import DEFAULT_REPO, fetch_all_releases, get_current_version, normalize_version
         target_repo = repo or os.getenv("GITHUB_REPO", DEFAULT_REPO)
         releases_raw = await asyncio.to_thread(fetch_all_releases, target_repo)
         current_version = get_current_version()

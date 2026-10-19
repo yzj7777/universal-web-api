@@ -1,16 +1,17 @@
 # app/core/browser/main.py
 
 import threading
-from typing import Optional, Dict, Any, List, Callable
+from typing import Any, Callable, Dict, List, Optional
 
-from app.core.config import logger, BrowserConstants, BrowserConnectionError, SSEFormatter
+from app.core.config import BrowserConnectionError, BrowserConstants, SSEFormatter, logger
 from app.core.tab_pool import TabPoolManager
+
+from .connection import BrowserConnectionMixin, _load_tab_pool_config
+from .media import BrowserMediaMixin
 
 # Mixins
 from .prompt import BrowserPromptMixin
-from .connection import BrowserConnectionMixin, _load_tab_pool_config
 from .workflow import BrowserWorkflowMixin
-from .media import BrowserMediaMixin
 
 
 class BrowserCore(

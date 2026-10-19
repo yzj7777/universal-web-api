@@ -8,7 +8,8 @@ import copy
 import json
 import os
 import re
-from typing import Dict, List, Optional, Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
 from app.core.config import command_log_context
 from app.services.command_engine_common import FOLLOW_DEFAULT_PRESET, logger
 

@@ -13,12 +13,12 @@ Phase A 实现：
 """
 
 import hashlib
-from typing import List, Optional, Any, Dict
 from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 from app.core.config import get_logger
-from app.models.schemas import normalize_modalities_config
 from app.core.driver import as_element
+from app.models.schemas import normalize_modalities_config
 
 logger = get_logger("IMG_EXT")
 

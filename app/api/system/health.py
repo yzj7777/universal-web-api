@@ -1,17 +1,20 @@
 """``app/api/system`` 的 health 分组（原 app/api/system.py 的一部分）。"""
 
 import time
-from app import __version__ as APP_VERSION
-from fastapi import Request, Depends
+
+from fastapi import Depends, Request
 from fastapi.responses import JSONResponse
-from app.core.config import AppConfig, log_collector
+
+from app import __version__ as APP_VERSION
 from app.api.deps import verify_dashboard_auth as verify_auth
-from app.services.config_engine import config_engine
 from app.api.system import runtime
 from app.api.system.common import (
     logger,
     router,
 )
+from app.core.config import AppConfig, log_collector
+from app.services.config_engine import config_engine
+
 
 def _public_health_response() -> JSONResponse:
     """S7：匿名远程调用者的最小健康响应。

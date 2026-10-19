@@ -5,12 +5,11 @@ from __future__ import annotations
 import json
 import os
 import random
+import sys
 import threading
 import time
 
 import pytest
-
-import sys
 
 from app.services.request_manager import RequestManager
 

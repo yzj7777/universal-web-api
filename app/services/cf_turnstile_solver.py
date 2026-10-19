@@ -17,8 +17,9 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from urllib.parse import urlsplit
 
 from app.core.config import logger as default_logger
-from app.utils.human_mouse import cdp_precise_click as default_cdp_precise_click, smooth_move_mouse as default_smooth_move_mouse
 from app.core.driver import driver_for_tab
+from app.utils.human_mouse import cdp_precise_click as default_cdp_precise_click
+from app.utils.human_mouse import smooth_move_mouse as default_smooth_move_mouse
 
 _DEFAULT_MAX_ATTEMPTS = 3
 

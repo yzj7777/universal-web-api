@@ -11,7 +11,6 @@ from __future__ import annotations
 import re
 from typing import Any, List, Optional, Pattern, Sequence, Union
 
-
 # 默认的媒体生成占位符正则列表（如 Gemini / Google 等平台在生成媒体时的临时 URL 占位行）
 DEFAULT_MEDIA_PLACEHOLDER_PATTERNS: List[Pattern[str]] = [
     re.compile(

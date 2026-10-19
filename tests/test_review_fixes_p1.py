@@ -11,7 +11,6 @@ import pytest
 
 from app.core import http_security as hs
 
-
 SYNTH_TOKEN = "synthetic-token-DO-NOT-USE-123"
 
 
@@ -45,6 +44,7 @@ def test_redact_env_for_backup_strips_secrets_and_credential_urls():
 
 def _backup_app():
     from fastapi import FastAPI
+
     from app.api import system
 
     app = FastAPI()
@@ -172,8 +172,9 @@ def test_cors_origins_default_is_empty(monkeypatch):
 
 
 def test_main_app_rejects_cross_origin_management_requests(monkeypatch):
-    import main
     from httpx import ASGITransport, AsyncClient
+
+    import main
 
     monkeypatch.setattr(main, "_cors_origins", [])
 
@@ -266,6 +267,7 @@ def test_main_lifespan_warns_public_bind_without_auth(monkeypatch):
 def test_v300_env_example_compat_allows_startup_with_warnings(monkeypatch):
     """3.0.0 模板兼容：AUTH_ENABLED/DASHBOARD_AUTH_ENABLED 为 your-secret-here 且 APP_HOST=0.0.0.0 时只告警不拒绝启动。"""
     import importlib.util
+
     import main
     from app.core.config import AppConfig
 
@@ -406,9 +408,9 @@ def test_media_delivery_policy(name, expected_type, expected_disp):
 
 
 def test_served_media_is_hardened_for_legacy_active_files():
-    import main
     from httpx import ASGITransport, AsyncClient
 
+    import main
     from app import paths
 
     # 媒体目录由 _isolate_download_dir 指向 tmp_path，生产代码按请求解析该目录。
@@ -470,6 +472,7 @@ def test_network_debug_capture_strict_bool(monkeypatch, value, expected):
 def test_network_debug_dir_retention_deletes_expired_snapshots(tmp_path):
     import os
     import time as _time
+
     from app.core.network_monitor import trim_network_parser_debug_dir
 
     old = tmp_path / "old.json"

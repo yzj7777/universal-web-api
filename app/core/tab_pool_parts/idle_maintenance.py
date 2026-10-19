@@ -48,7 +48,6 @@ from typing import Any, Optional
 from app.core.config import logger
 from app.core.driver import browser_driver, driver_for_tab
 
-
 # 真实可见性：可见性模拟在 document 实例上定义了 own property，
 # 这里直接调用 Document.prototype 上的原生 getter，得到浏览器真实状态。
 REAL_VISIBILITY_JS = (

@@ -4,10 +4,11 @@
 实例状态都在 ConfigEngine.__init__（engine.py）里初始化。
 """
 
+import copy
 import json
 import os
-import copy
-from typing import Dict, Optional, Any
+from typing import Any, Dict, Optional
+
 from .engine_common import logger
 
 

@@ -1,10 +1,19 @@
 import copy
 import json
+
 import pytest
 
-from app.core.workflow.flow_runtime import (FlowProgram, Variables, validate_workflow, validate_inputs,
-    FlowValidationError, FlowVariableError, FlowLimitError, capture_page_state)
 from app.core.config import WorkflowCancelledError, WorkflowError
+from app.core.workflow.flow_runtime import (
+    FlowLimitError,
+    FlowProgram,
+    FlowValidationError,
+    FlowVariableError,
+    Variables,
+    capture_page_state,
+    validate_inputs,
+    validate_workflow,
+)
 
 
 def node(action, value=None, **fields):

@@ -8,26 +8,27 @@ app/utils/image_handler.py - 图片处理工具
 - 复制图片到剪贴板（Windows）
 """
 
+import base64
+import hashlib
+import io
+import json
 import os
 import re
-import hashlib
 import time
 import warnings
-from app.core.config import get_logger
-import requests
-import base64
-import json
-import io
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
+
+import requests
 from PIL import Image
+
+from app.core.config import get_logger
+from app.utils.remote_resource import get_public_remote_resource
 from app.utils.system_clipboard import (
     ClipboardDependencyError,
     ClipboardUnsupportedError,
     copy_image_to_native_clipboard,
 )
-from app.utils.remote_resource import get_public_remote_resource
-
 
 logger = get_logger("IMG_HDL")
 

@@ -2,9 +2,16 @@
 Run against a local development server. All write APIs are intercepted; config SHA
 is compared before/after. No third-party account or AI request is used.
 """
-import asyncio, re, json, hashlib, urllib.request, os
+import asyncio
+import hashlib
+import json
+import os
+import re
+import urllib.request
 from pathlib import Path
+
 from playwright.async_api import async_playwright, expect
+
 ROOT=Path(__file__).resolve().parents[2];DOMAIN='aistudio.google.com'
 BASE_URL=os.environ.get('UWA_BASE_URL','http://127.0.0.1:8000').rstrip('/')
 async def main():
