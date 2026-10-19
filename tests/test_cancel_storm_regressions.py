@@ -10,6 +10,7 @@ import anyio
 import pytest
 
 from app.api import chat, tab_routes
+from app.api.openai import runtime as tab_runtime
 from app.core.config import _request_context
 import importlib
 rm_module = importlib.import_module('app.services.request_manager')
@@ -63,7 +64,7 @@ def test_stop_midstream_finishes_cleanup_and_next_request_is_independent(monkeyp
         execute_workflow_for_exact_url = execute
     browser = Browser()
     module = chat if route == 'chat' else tab_routes
-    monkeypatch.setattr(module, 'get_browser', lambda **kwargs: browser)
+    monkeypatch.setattr(tab_runtime if route != 'chat' else module, 'get_browser', lambda **kwargs: browser)
     body = module.ChatRequest(model='deepseek-v4', messages=[{'role':'user','content':'hello'}], stream=True)
     def stream(ctx):
         request = ConnectedRequest()
@@ -281,11 +282,11 @@ def test_open_circuit_rejects_at_entry_before_browser_or_request_history(monkeyp
     fp = guard.get_client_fingerprint(request)
     for _ in range(4): guard.record_cancel(fp)
     monkeypatch.setattr(chat, 'cancel_storm_guard', guard)
-    monkeypatch.setattr(tab_routes, 'cancel_storm_guard', guard)
+    monkeypatch.setattr(tab_runtime, 'cancel_storm_guard', guard)
     no_browser = Mock(side_effect=AssertionError('Browser must not be accessed'))
     no_record = Mock(side_effect=AssertionError('No request record should be created'))
     monkeypatch.setattr(chat, 'get_browser', no_browser)
-    monkeypatch.setattr(tab_routes, 'get_browser', no_browser)
+    monkeypatch.setattr(tab_runtime, 'get_browser', no_browser)
     monkeypatch.setattr(tab_routes.request_manager, 'create_request', no_record)
     body = tab_routes.ChatRequest(model='deepseek-v4',messages=[])
     async def exercise():
@@ -350,10 +351,10 @@ def test_http_retry_after_is_preserved_and_rejected_retries_do_not_allocate(monk
     guard = CancelStormGuard()
     fp = guard.get_client_fingerprint(SimpleNamespace(client=SimpleNamespace(host='127.0.0.1'), headers={'user-agent':'cancel-repro'}))
     for _ in range(4): guard.record_cancel(fp)
-    monkeypatch.setattr(tab_routes, 'cancel_storm_guard', guard)
+    monkeypatch.setattr(tab_runtime, 'cancel_storm_guard', guard)
     browser = Mock(side_effect=AssertionError('No browser allocation during cooldown'))
     create = Mock(side_effect=AssertionError('No request/history entry during cooldown'))
-    monkeypatch.setattr(tab_routes, 'get_browser', browser)
+    monkeypatch.setattr(tab_runtime, 'get_browser', browser)
     monkeypatch.setattr(tab_routes.request_manager, 'create_request', create)
     app = FastAPI()
     @app.post('/v1/chat/completions')

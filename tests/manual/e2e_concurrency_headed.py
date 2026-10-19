@@ -37,7 +37,7 @@ os.environ.update({
     "BROWSER_CDP_RECYCLE_AFTER_REQUESTS": "3",  # 让回收也掺进来
     "LOG_LEVEL": "WARNING",
 })
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 os.chdir(ROOT)
 

@@ -41,12 +41,13 @@ class _FakeBrowser:
 def app_with_fake_browser(monkeypatch):
     import main
     from app.api import chat, tab_routes
+    from app.api.openai import runtime as tab_runtime
 
     for name in ("AUTH_ENABLED", "AUTH_TOKEN"):
         monkeypatch.delenv(name, raising=False)
     browser = _FakeBrowser()
     monkeypatch.setattr(chat, "get_browser", lambda **kwargs: browser)
-    monkeypatch.setattr(tab_routes, "get_browser", lambda **kwargs: browser)
+    monkeypatch.setattr(tab_runtime, "get_browser", lambda **kwargs: browser)
     return main.app, browser
 
 

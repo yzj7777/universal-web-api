@@ -273,7 +273,7 @@ def clean_browser_profile() -> None:
     from app.runtime.browser_launcher import resolve_profile_dir
 
     try:
-        from clean_profile import safe_slim_profile
+        from app.update.profile import safe_slim_profile
 
         safe_slim_profile(resolve_profile_dir())
     except Exception as exc:  # broad-except: 清理是可选优化，失败不应阻止启动
@@ -291,10 +291,26 @@ def launch_controlled_browser() -> bool:
         raise SystemExit(1) from exc
 
 
+def ensure_project_cwd() -> None:
+    """把进程工作目录固定到项目根目录。
+
+    用户可能从任意目录启动（systemd / 计划任务 / IDE / ``uv run --directory``）。
+    项目内的脚本与第三方配置里有少量按相对路径访问的资产（站点配置、日志、
+    浏览器 profile、用户脚本等），若 CWD 不对会静默读错或写错位置。
+    这里统一纠正一次；``main.py`` 自身的静态/媒体目录已改用 ``app.paths`` 的绝对路径。
+    """
+    try:
+        if Path.cwd().resolve() != PROJECT_ROOT:
+            os.chdir(PROJECT_ROOT)
+    except OSError as exc:  # broad-except 不适用：这里只忽略 chdir 失败
+        _log(f"[WARN] 无法切换到项目目录 {PROJECT_ROOT}: {exc}")
+
+
 def bootstrap_runtime() -> None:
     """完整启动引导；仅在 ``main.py`` 作为脚本运行时调用。"""
     _apply_utf8_defaults()
     _load_env()
+    ensure_project_cwd()
     apply_proxy_environment()
 
     _log()
@@ -319,6 +335,7 @@ def bootstrap_runtime() -> None:
 __all__ = [
     "apply_proxy_environment",
     "bootstrap_runtime",
+    "ensure_project_cwd",
     "normalize_python_proxy_url",
     "apply_drissionpage_patch",
     "clean_browser_profile",

@@ -541,8 +541,10 @@ def test_s6_media_routes_require_auth_when_enabled(monkeypatch):
     import main
     from httpx import ASGITransport, AsyncClient
 
-    base = Path("download_images")
-    base.mkdir(exist_ok=True)
+    # _isolate_download_dir 已把媒体目录指向 tmp_path，生产代码按请求解析该目录。
+    from app import paths
+
+    base = paths.download_dir()
     name = "_review_s6_ok.png"
     (base / name).write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 16)
     monkeypatch.setenv("MEDIA_REQUIRE_AUTH", "true")

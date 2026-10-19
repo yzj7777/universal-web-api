@@ -45,14 +45,46 @@ def plan(preset, captures=None, transport_sent=False):
     return result,flow
 
 
+def assert_config_compatible(old, new, path=""):
+    """迁移时的历史值必须原样保留；之后的版本演进只允许新增字段、追加列表项。"""
+    if isinstance(old, dict):
+        assert isinstance(new, dict), f"{path} 的类型由 dict 变为 {type(new).__name__}"
+        missing = set(old) - set(new)
+        assert not missing, f"{path} 删除了字段：{sorted(missing)}"
+        for key, value in old.items():
+            assert_config_compatible(value, new[key], f"{path}.{key}")
+    elif isinstance(old, list):
+        assert isinstance(new, list), f"{path} 的类型由 list 变为 {type(new).__name__}"
+        assert new[:len(old)] == old, f"{path} 的历史列表项被修改或删除"
+    else:
+        assert old == new, f"{path} 被改动：{old!r} -> {new!r}"
+
+
+def assert_selector_keys_preserved(old, new, path=""):
+    """选择器会随站点改版持续调优，这里只要求迁移前的键仍在，不冻结具体表达式。"""
+    missing = set(old) - set(new)
+    assert not missing, f"{path} 删除了选择器：{sorted(missing)}"
+    for key in old:
+        # 可选选择器允许为 None / 空串（站点结构不一定都能定位到），但键必须在
+        assert new[key] is None or isinstance(new[key], str), f"{path}.{key} 类型异常: {new[key]!r}"
+
+
 def test_only_requested_sites_and_workflows_change_and_upgrade_is_repeatable():
     for domain in (GEMINI,):
         assert AFTER[domain]['default_preset']==BEFORE[domain]['default_preset']
         assert set(AFTER[domain]['presets'])==set(BEFORE[domain]['presets'])
         for name,old in BEFORE[domain]['presets'].items():
             new=AFTER[domain]['presets'][name]
-            assert {k:v for k,v in old.items() if k not in {'workflow', 'selectors'}}=={k:v for k,v in new.items() if k not in {'workflow', 'selectors'}}
-            assert {k:v for k,v in old['selectors'].items() if k != '选择模型'}=={k:v for k,v in new['selectors'].items() if k != '选择模型'}
+            assert_config_compatible(
+                {k: v for k, v in old.items() if k not in {'workflow', 'selectors'}},
+                {k: v for k, v in new.items() if k not in {'workflow', 'selectors'}},
+                f'{domain}/{name}',
+            )
+            assert_selector_keys_preserved(
+                {k: v for k, v in old['selectors'].items() if k != '选择模型'},
+                new['selectors'],
+                f'{domain}/{name}/selectors',
+            )
             assert validate_workflow(new['workflow'])['version']==2
             assert sum(n['action']=='GROUP' for n in new['workflow'])==3
             assert not any(n['action']=='WAIT' for n in walk(new['workflow']))

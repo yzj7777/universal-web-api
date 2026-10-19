@@ -18,7 +18,7 @@
 
 <br>
 
-当前版本：**3.0.1**（以 [`VERSION`](./VERSION) 为准，更新内容见 [`CHANGELOG-3.0.1.md`](./CHANGELOG-3.0.1.md)）
+当前版本：**3.0.1**（以 [`VERSION`](./VERSION) 为准，更新内容见 [`CHANGELOG.md`](./CHANGELOG.md)）
 
 **Universal Web API** 是一个专为开发者设计的**本地 API 桥接调试工具**。它能够将您在本地浏览器中已登录并正常使用的 AI 网页端服务（如 ChatGPT, DeepSeek, Claude, Gemini 等）转换为本地标准的 OpenAI/Anthropic 兼容接口。
 
@@ -78,6 +78,7 @@ graph TD
    ```bash
    uv sync
    uv run python main.py
+   # 等价入口：uv run python -m app
    ```
 3. **完成初始化**：启动时会校验 `.venv`、应用 DrissionPage 补丁，并自动弹出受控浏览器窗口，同时在普通浏览器中打开本地控制台 `http://127.0.0.1:8199`。受控浏览器只建议放 AI 站点，控制台和教程请在普通浏览器里查看。
 4. **账号登录**：在受控浏览器窗口中，登录您拥有的 AI 网站账号（如 ChatGPT、DeepSeek 等），并保持目标站点停留在可对话页面。

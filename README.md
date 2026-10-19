@@ -18,7 +18,7 @@
 
 <br>
 
-当前版本：**3.0.1**（以 [`VERSION`](./VERSION) 为准，更新内容见 [`CHANGELOG-3.0.1.md`](./CHANGELOG-3.0.1.md)）
+当前版本：**3.0.1**（以 [`VERSION`](./VERSION) 为准，更新内容见 [`CHANGELOG.md`](./CHANGELOG.md)）
 
 Universal Web API 是一个运行在本机的 API 桥接与调试工具。它接管浏览器中已经登录的 AI 网页（ChatGPT、DeepSeek、Gemini、Claude 等），将网页对话转换为 OpenAI / Anthropic 兼容接口，供本地客户端调用。
 
@@ -85,6 +85,7 @@ uv sync
 
 # 3. 启动服务（无需激活虚拟环境）
 uv run python main.py
+#    等价入口：uv run python -m app（同一个 main.py，不会重复执行引导）
 ```
 
 1. 从 [Releases](https://github.com/lumingya/universal-web-api/releases) 下载并解压到本地目录。路径尽量使用英文、无空格目录。

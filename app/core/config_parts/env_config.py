@@ -8,8 +8,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_LOG_DIR = PROJECT_ROOT / "logs"
+from app.paths import LOGS_DIR as DEFAULT_LOG_DIR
+from app.paths import PROJECT_ROOT
 
 
 def atomic_write_json(path: str | Path, payload: Any) -> None:

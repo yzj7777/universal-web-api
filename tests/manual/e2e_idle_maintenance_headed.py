@@ -13,7 +13,7 @@ os.environ.update({
     "BROWSER_CDP_RECYCLE_IDLE_SEC": "10",
     "BROWSER_CDP_RECYCLE_AFTER_REQUESTS": "1",
 })
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 os.chdir(ROOT)
 

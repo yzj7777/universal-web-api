@@ -414,14 +414,14 @@ class DeepSeekParser(ResponseParser):
 
     def export_debug_snapshot(self, raw_response: str = "") -> str:
         import time
-        from pathlib import Path
+
+        from app import paths
 
         payload = {
             **self.export_debug_data(raw_response),
             "exported_at": int(time.time()),
         }
-        path = Path("logs") / "deepseek_parser_debug.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
+        path = paths.logs_dir(create=True) / "deepseek_parser_debug.json"
         path.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",

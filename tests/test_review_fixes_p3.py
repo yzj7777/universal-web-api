@@ -249,6 +249,7 @@ def _s7_get(monkeypatch, path, client_host, headers=None, env=None, browser=None
 
     import main
     from app.api import system
+    from app.api.system import runtime as system_runtime
     from httpx import ASGITransport, AsyncClient
 
     for name in ("AUTH_TOKEN", "DASHBOARD_AUTH_TOKEN", "AUTH_ENABLED", "TRUST_PROXY_HEADERS"):
@@ -256,7 +257,7 @@ def _s7_get(monkeypatch, path, client_host, headers=None, env=None, browser=None
     for key, value in (env or {}).items():
         monkeypatch.setenv(key, value)
     fake = browser or _FakeBrowser()
-    monkeypatch.setattr(system, "get_browser", lambda *a, **k: fake)
+    monkeypatch.setattr(system_runtime, "get_browser", lambda *a, **k: fake)
 
     async def run():
         transport = ASGITransport(app=main.app, client=(client_host, 40000))

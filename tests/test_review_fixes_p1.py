@@ -112,8 +112,9 @@ def test_backup_with_dashboard_auth_requires_token(synthetic_env_dir, monkeypatc
 
 def test_backup_import_ignores_redaction_placeholders(synthetic_env_dir, monkeypatch):
     from app.api import system
+    from app.api.system import settings as system_settings
 
-    monkeypatch.setattr(system, "_schedule_service_restart", lambda *_a, **_k: None)
+    monkeypatch.setattr(system_settings, "_schedule_service_restart", lambda *_a, **_k: None)
     resp = _request(_backup_app(), "POST", "/api/settings/backup",
                     json_body={"files": {"env": {"AUTH_TOKEN": "***", "HELPER_MODEL": "y"}}})
     assert resp.status_code == 200, resp.text
@@ -408,8 +409,10 @@ def test_served_media_is_hardened_for_legacy_active_files():
     import main
     from httpx import ASGITransport, AsyncClient
 
-    base = Path("download_images")
-    base.mkdir(exist_ok=True)
+    from app import paths
+
+    # 媒体目录由 _isolate_download_dir 指向 tmp_path，生产代码按请求解析该目录。
+    base = paths.download_dir()
     names = {"_review_s8_legacy.svg": SVG_PAYLOAD, "_review_s9_legacy.html": HTML_PAYLOAD,
              "_review_ok.png": b"\x89PNG\r\n\x1a\n" + b"\x00" * 32}
     for name, data in names.items():

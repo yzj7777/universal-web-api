@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from app.core.driver import as_element, driver_for_tab
+from app import paths
 from app.core.config import get_logger
 from app.core.extractors.image_extractor import (
     get_default_image_extraction_config,
@@ -2618,8 +2619,7 @@ class MediaExtractor:
         except (TypeError, ValueError):
             max_payload_bytes = 10 * 1024 * 1024
 
-        save_dir = Path("download_images")
-        save_dir.mkdir(exist_ok=True)
+        save_dir = paths.download_dir()
         deadline = time.time() + timeout_seconds
         best_event: Dict[str, Any] = {}
         best_size = 0

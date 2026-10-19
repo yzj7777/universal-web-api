@@ -2,7 +2,7 @@
 
 每一项记录名称、类型、默认值、分组和说明，并由它派生出：
 - ``.env.example``：由 ``scripts/build_env_example.py`` 生成，``--check`` 用于校验是否过期；
-- 控制面板保存 .env 时的类型校验（``validate_env_values``，接入 ``app/api/system.py``）；
+- 控制面板保存 .env 时的类型校验（``validate_env_values``，接入 ``app/api/system/settings.py``）；
 - 测试守护（``tests/test_settings_registry.py``）：代码里读取的每个环境变量都必须在此登记，
   控制面板 ENV_CONFIG_SCHEMA 的每一项也必须在此登记且类型一致。
 

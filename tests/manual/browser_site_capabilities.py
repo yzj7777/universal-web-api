@@ -5,7 +5,7 @@ is compared before/after. No third-party account or AI request is used.
 import asyncio, re, json, hashlib, urllib.request, os
 from pathlib import Path
 from playwright.async_api import async_playwright, expect
-ROOT=Path(__file__).resolve().parents[1];DOMAIN='aistudio.google.com'
+ROOT=Path(__file__).resolve().parents[2];DOMAIN='aistudio.google.com'
 BASE_URL=os.environ.get('UWA_BASE_URL','http://127.0.0.1:8000').rstrip('/')
 async def main():
  before=hashlib.sha256((ROOT/'config/sites.json').read_bytes()).hexdigest()
