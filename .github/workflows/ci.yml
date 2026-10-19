@@ -13,6 +13,13 @@ concurrency:
 permissions:
   contents: read
 
+# Windows runner 在 CI 里把 stdout 重定向到管道时，默认用本地代码页（cp1252）编码，
+# 而这个项目的日志大量输出中文 → UnicodeEncodeError 会直接把 pytest 打崩。
+# 强制 UTF-8 让三个作业在两个平台上行为一致。
+env:
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: "utf-8"
+
 jobs:
   lint:
     name: ruff
@@ -47,7 +54,14 @@ jobs:
       - run: uv sync --frozen
       # 只跑无需真实浏览器/已登录站点的子集；browser / real_browser 用例由本地或
       # 夜间任务执行（见 tests/manual/README.md 与 pyproject 的 markers）。
-      - run: uv run --no-sync pytest -q -m "not browser and not real_browser" --junitxml="${{ runner.temp }}/pytest-report.xml"
+      # 统一用 bash（Windows runner 也带 Git Bash），这样 tee/pipefail 的行为一致，
+      # 且即使 pytest 在收集阶段就崩了，也能把原始输出留给下面的注解步骤。
+      - name: pytest
+        shell: bash
+        run: |
+          set -o pipefail
+          uv run --no-sync pytest -q -m "not browser and not real_browser" \
+            --junitxml="$RUNNER_TEMP/pytest-report.xml" 2>&1 | tee "$RUNNER_TEMP/pytest.log"
         env:
           # 干净克隆下依赖本地私有资源的用例由 conftest.py 自动 skip；
           # 这里显式关闭真实浏览器测试，避免 CI 试图下载 Chromium。
@@ -56,7 +70,7 @@ jobs:
       # （日志下载在部分网络环境下不可用）。
       - name: 汇总失败用例
         if: failure()
-        run: uv run --no-sync python scripts/ci_report_failures.py "${{ runner.temp }}/pytest-report.xml"
+        run: uv run --no-sync python scripts/ci_report_failures.py "$RUNNER_TEMP/pytest-report.xml" "$RUNNER_TEMP/pytest.log"
 
   structure:
     name: 结构与产物一致性
