@@ -6,7 +6,6 @@
    "app.core.browser.connection",
    "app.core.browser.main",
    "app.core.browser.media",
-   "app.core.browser.prompt",
    "app.core.browser.workflow",
    "app.core.chat_job",
    "app.core.extractors",
@@ -38,7 +37,6 @@
    "app.core.workflow.executor_actions",
    "app.core.workflow.executor_interaction",
    "app.core.workflow.image_input",
-   "app.core.workflow.model_selection",
    "app.core.workflow.text_input",
    "app.services",
    "app.services.arena_direct_models",
@@ -83,27 +81,17 @@
    "app.services.catalog_routing"
   ],
   [
-   "app.core.cdp_hygiene",
-   "app.core.config",
-   "app.core.config_parts",
-   "app.core.config_parts.cute_translator",
-   "app.core.config_parts.log_formatters",
-   "app.core.config_parts.secure_logger",
-   "app.core.config_parts.sse_formatter",
-   "app.core.workflow.arena_send_watchdog",
-   "app.services.arena_image_generation",
-   "app.services.arena_image_stream_observer",
-   "app.services.error_metadata",
-   "app.utils.image_validation"
-  ],
-  [
    "app.api.system",
    "app.api.system.diagnostics",
    "app.api.system.health"
+  ],
+  [
+   "app.services.arena_image_generation",
+   "app.services.arena_image_stream_observer"
   ]
  ],
  "cycles": 4,
- "largest_component": 63,
+ "largest_component": 61,
  "modules": [
   "app.api",
   "app.api.adapter_routes",
@@ -126,16 +114,8 @@
   "app.core.browser.connection",
   "app.core.browser.main",
   "app.core.browser.media",
-  "app.core.browser.prompt",
   "app.core.browser.workflow",
-  "app.core.cdp_hygiene",
   "app.core.chat_job",
-  "app.core.config",
-  "app.core.config_parts",
-  "app.core.config_parts.cute_translator",
-  "app.core.config_parts.log_formatters",
-  "app.core.config_parts.secure_logger",
-  "app.core.config_parts.sse_formatter",
   "app.core.extractors",
   "app.core.extractors.deep_mode",
   "app.core.extractors.media_extractor",
@@ -159,14 +139,12 @@
   "app.core.tab_pool_parts.session",
   "app.core.workflow",
   "app.core.workflow.arena_direct_guard",
-  "app.core.workflow.arena_send_watchdog",
   "app.core.workflow.attachment_upload",
   "app.core.workflow.error_handlers",
   "app.core.workflow.executor",
   "app.core.workflow.executor_actions",
   "app.core.workflow.executor_interaction",
   "app.core.workflow.image_input",
-  "app.core.workflow.model_selection",
   "app.core.workflow.text_input",
   "app.services",
   "app.services.adapter_updates",
@@ -192,12 +170,10 @@
   "app.services.config.engine_presets",
   "app.services.config.engine_stream",
   "app.services.config_engine",
-  "app.services.error_metadata",
   "app.services.extractor_manager",
   "app.services.metrics",
   "app.services.request_manager",
-  "app.services.result_event_bridge",
-  "app.utils.image_validation"
+  "app.services.result_event_bridge"
  ],
- "modules_in_cycle": 93
+ "modules_in_cycle": 81
 }

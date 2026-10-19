@@ -34,17 +34,16 @@ from app.utils.image_validation import (
 )
 
 ARENA_NATIVE_STOP_SELECTOR = 'css:button[aria-label="Stop generation"]'
-ARENA_PROMPT_REJECTED_CODE = "arena_prompt_rejected"
-ARENA_IMAGE_GENERATION_FAILED_CODE = "arena_image_generation_failed"
-ARENA_IMAGE_UNCHANGED_CODE = "arena_image_unchanged"
-ARENA_RESULT_BASELINE_PROPERTY = "__universalProxyArenaResultBaseline"
-ARENA_NON_RETRYABLE_CODES = frozenset(
-    {
-        ARENA_PROMPT_REJECTED_CODE,
-        ARENA_IMAGE_GENERATION_FAILED_CODE,
-        ARENA_IMAGE_UNCHANGED_CODE,
-    }
+# 错误码常量已下沉到 app.core.error_codes（叶子模块，用于断开 core<->services 导入环）；
+# 此处再导出以保证既有 import 路径仍可用。
+from app.core.error_codes import (
+    ARENA_IMAGE_GENERATION_FAILED_CODE,
+    ARENA_IMAGE_UNCHANGED_CODE,
+    ARENA_NON_RETRYABLE_CODES,
+    ARENA_PROMPT_REJECTED_CODE,
 )
+
+ARENA_RESULT_BASELINE_PROPERTY = "__universalProxyArenaResultBaseline"
 
 _IMAGE_PROMPT_MARKERS = (
     "生成图片",

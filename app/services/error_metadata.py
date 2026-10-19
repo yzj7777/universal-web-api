@@ -14,13 +14,13 @@ from typing import Any, Dict, Optional, Set
 
 from fastapi.responses import JSONResponse
 
-from app.core.workflow.arena_send_watchdog import (
-    ARENA_PAGE_ERROR,
-    ARENA_SEND_NO_TARGET_AFTER_RETRY,
-)
-from app.services.arena_image_generation import (
+# 直接依赖叶子常量模块，避免经由 arena_send_watchdog / arena_image_generation
+# 反向依赖回 app.core，从而断开 core <-> services 的导入环。
+from app.core.error_codes import (
     ARENA_NON_RETRYABLE_CODES,
+    ARENA_PAGE_ERROR,
     ARENA_PROMPT_REJECTED_CODE,
+    ARENA_SEND_NO_TARGET_AFTER_RETRY,
 )
 
 
