@@ -9,7 +9,7 @@ import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from app.core import cdp_hygiene
-from app.core.config import BrowserConnectionError, BrowserConstants, SSEFormatter, logger
+from app.core.config import BrowserConnectionError, logger
 from app.core.driver import browser_driver
 from app.core.driver.drission_internals import connect_existing_browser
 
@@ -17,9 +17,8 @@ from app.core.driver.drission_internals import connect_existing_browser
 cdp_hygiene.install()
 
 if TYPE_CHECKING:
-    from app.core.tab_pool import TabPoolManager, TabSession
 
-    from .main import BrowserCore
+    pass
 
 
 def _looks_like_transient_local_debug_error(error: Any) -> bool:

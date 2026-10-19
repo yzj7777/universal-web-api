@@ -2,10 +2,8 @@
 # 用法：python patch_drissionpage.py
 # 时机：uv sync 之后、服务启动之前（main.py 启动引导会自动执行）
 
-import importlib
 import inspect
 import shutil
-from datetime import datetime
 from pathlib import Path
 
 RECOVERY_GUARD_MARKER = "# CODEX_LISTENER_RECOVERY_GUARD_V2"

@@ -41,7 +41,8 @@ def is_explicit_arena_direct_url(url: Any) -> bool:
 
 from app.core.cdp_hygiene import decode_js_json
 from app.core.tab_pool_parts._arena_snapshot import (
-    _ARENA_STORE_SNAPSHOT_JS,
+    # 再导出：tests/test_arena_auto_battle_command.py 从本模块取用。
+    _ARENA_STORE_SNAPSHOT_JS,  # noqa: F401
     _ARENA_STORE_SNAPSHOT_JSON_JS,
 )
 from app.core.tab_pool_parts.idle_maintenance import note_network_activity

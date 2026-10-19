@@ -9,9 +9,8 @@ app/core/workflow/model_selection.py - 通用模型选择与切换协议处理�
 
 from __future__ import annotations
 
-import logging
 import time
-from typing import Any, Callable, Dict, Optional, Protocol
+from typing import Any, Callable, Dict, Optional
 
 from app.core.config import ElementNotFoundError, WorkflowError, logger
 from app.services.arena_direct_models import resolve_arena_direct_model

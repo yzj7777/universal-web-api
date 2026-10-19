@@ -14,11 +14,9 @@ import hashlib
 import json
 import math
 import os
-import random
 import re
 import threading
 import time
-import uuid
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from enum import Enum
@@ -1703,7 +1701,6 @@ class RequestManager:
         detail_enabled = self._request_monitor_detail_enabled()
         with ctx._lock:
             for payload in payloads:
-                error = payload.get("error") if isinstance(payload, dict) else None
                 payload_error = self._extract_error_payload(payload)
                 text = "" if payload_error else self._extract_response_text(payload)
                 media_items = self._extract_media_items(payload)

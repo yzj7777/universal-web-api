@@ -79,7 +79,6 @@ def test_tab_stream_headers_disable_proxy_transformations():
 def test_tab_stream_emits_initial_keepalive_before_browser_result(monkeypatch):
     """A slow tab acquisition must not make an upstream client retry forever."""
     from app.api import tab_routes
-    from app.core.config import SSEFormatter
 
     class _Request:
         async def is_disconnected(self):

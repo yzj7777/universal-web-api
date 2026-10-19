@@ -20,7 +20,7 @@ v5.10 改进：
 import math
 import random
 import time
-from typing import Callable, Optional, Tuple
+from typing import Callable, Tuple
 
 from app.core.config import logger
 from app.core.driver import driver_for_tab

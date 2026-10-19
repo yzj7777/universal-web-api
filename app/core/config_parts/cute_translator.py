@@ -2,7 +2,7 @@
 app/core/config_parts/cute_translator.py - 展示层喵化翻译规则与逻辑模块
 """
 import re
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from .browser_constants import BrowserConstants
 

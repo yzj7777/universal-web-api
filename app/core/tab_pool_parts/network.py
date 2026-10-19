@@ -6,7 +6,9 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from app.core.config import logger
 from app.core.driver import driver_for_tab
 
-from ._arena_snapshot import _ARENA_STORE_SNAPSHOT_JS
+# 再导出：tests/test_arena_auto_battle_command.py 从本模块取用。
+# ruff 的 F401 只看单文件，识别不出跨文件再导出，故显式标注。
+from ._arena_snapshot import _ARENA_STORE_SNAPSHOT_JS  # noqa: F401
 from .idle_maintenance import note_network_activity
 from .session import TabSession
 

@@ -9,7 +9,6 @@ from app import __version__ as APP_VERSION
 from app.api.deps import verify_dashboard_auth as verify_auth
 from app.api.system import runtime
 from app.api.system.common import (
-    logger,
     router,
 )
 from app.core.config import AppConfig, log_collector

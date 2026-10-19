@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     from app.core.tab_pool import TabSession
 
 # R2-3：模块级常量、日志器与可选依赖迁到 command_engine_common，这里重新导出以保持兼容
-from app.services.command_engine_common import (  # noqa: E402,F401
+from app.services.command_engine_common import (  # noqa: F401
     _NON_ASCII_RE,
     _WHITESPACE_RE,
     _WORD_LIKE_KEYWORD_RE,

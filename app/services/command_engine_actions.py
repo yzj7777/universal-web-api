@@ -9,7 +9,7 @@ import re
 import string
 import time
 from datetime import date, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Optional, Set
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional
 from urllib.parse import urlsplit
 
 from app.core.driver import as_element, driver_for_tab
@@ -22,20 +22,14 @@ except ImportError:
 
 from app.core.config import get_logger
 from app.core.page_lifecycle import BACKGROUND_WAKE_CDP_TIMEOUT
-from app.core.request_transport import (
-    execute_request_transport,
-    get_default_request_transport_config,
-)
 from app.core.tab_pool_parts._arena_snapshot import _ARENA_STORE_SNAPSHOT_JS
 from app.services.arena_rule_service import record_arena_rule_candidates
 from app.services.command_defs import ACTION_TYPES, TRIGGER_TYPES, CommandFlowAbort
 from app.services.sse_utils import iter_sse_payloads
 from app.services.transport_profile_handlers import (
     get_transport_profile_handler,
-    register_transport_profile_handler,
 )
 from app.utils.browser_profile_identity import resolve_tab_browser_profile
-from app.utils.site_url import extract_remote_site_domain
 
 if TYPE_CHECKING:
     from app.core.tab_pool_parts.session import TabSession

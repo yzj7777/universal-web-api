@@ -12,7 +12,7 @@ from app.services.command_engine_common import logger
 from app.utils.site_url import extract_remote_site_domain
 
 if TYPE_CHECKING:
-    from app.core.tab_pool import TabSession  # noqa: F401
+    from app.core.tab_pool import TabSession
 
 
 class CommandEngineTriggersMixin:

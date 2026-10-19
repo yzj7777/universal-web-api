@@ -12,12 +12,11 @@ import base64
 import hashlib
 import io
 import json
-import os
 import re
 import time
 import warnings
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import requests
 from PIL import Image

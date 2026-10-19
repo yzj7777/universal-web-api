@@ -3,11 +3,10 @@ app/core/config_parts/browser_constants.py - 浏览器常量配置与过滤器�
 """
 import json
 import logging
-import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, Optional
 
-from .env_config import PROJECT_ROOT, AppConfig
+from .env_config import AppConfig
 
 
 class BrowserConstants:

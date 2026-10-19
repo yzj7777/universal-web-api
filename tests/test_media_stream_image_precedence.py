@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 from app.core.browser.media import BrowserMediaMixin

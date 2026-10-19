@@ -720,7 +720,6 @@ def recycle_session(manager: Any, session: Any, reason: str) -> bool:
         return False
 
     started = time.perf_counter()
-    ok = False
     setattr(session, "_cdp_recycle_in_progress", True)
     try:
         stop = getattr(manager, "_stop_global_monitor_for_session", None)
@@ -751,7 +750,6 @@ def recycle_session(manager: Any, session: Any, reason: str) -> bool:
         setattr(session, "_uwapi_recycle_request_mark", int(getattr(session, "request_count", 0) or 0))
         setattr(session, "_uwapi_recycle_count", int(getattr(session, "_uwapi_recycle_count", 0) or 0) + 1)
         setattr(session, "_uwapi_recycle_retry_at", 0.0)
-        ok = True
         logger.debug(
             f"[{session.id}] 空闲标签页 CDP 会话已回收（{reason}，"
             f"耗时 {time.perf_counter() - started:.2f}s）"

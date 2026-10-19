@@ -3,12 +3,10 @@
 全部使用合成数据、临时目录与桩对象；不依赖真实浏览器、CDP 或外网。
 """
 
-import asyncio
 import json
 import os
 import time
 from pathlib import Path
-from types import SimpleNamespace
 from unittest import mock
 
 import pytest
@@ -302,7 +300,7 @@ def local_http_server():
     seen = {}
 
     class Handler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self):  # noqa: N802
+        def do_GET(self):
             seen["host"] = self.headers.get("Host")
             body = b"pinned-ok"
             self.send_response(200)

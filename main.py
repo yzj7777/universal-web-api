@@ -29,7 +29,6 @@ import logging
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 import mimetypes
 import shutil
-import socket
 import subprocess
 import threading
 import time

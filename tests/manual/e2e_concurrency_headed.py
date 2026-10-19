@@ -25,7 +25,6 @@ import json
 import os
 import random
 import socket
-import statistics
 import sys
 import tempfile
 import threading
@@ -128,7 +127,6 @@ def ensure_loaded(t, url):
 
 from app.core.tab_pool_parts import idle_maintenance as im
 from app.core.tab_pool_parts.manager import TabPoolManager
-from app.core.tab_pool_parts.session import TabStatus
 from app.utils.human_mouse import cdp_precise_click, human_scroll
 
 _resume_times = []

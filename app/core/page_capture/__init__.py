@@ -33,7 +33,7 @@ def _load_builtin_fetch_captures() -> None:
     global _FETCH_CAPTURE_BUILTINS_LOADED
     if _FETCH_CAPTURE_BUILTINS_LOADED:
         return
-    from . import kimi_fetch_capture as _kimi_fetch_capture  # noqa: F401
+    from . import kimi_fetch_capture as _kimi_fetch_capture
 
     _FETCH_CAPTURE_BUILTINS_LOADED = True
 
@@ -42,7 +42,7 @@ def _load_builtin_request_transports() -> None:
     global _REQUEST_TRANSPORT_BUILTINS_LOADED
     if _REQUEST_TRANSPORT_BUILTINS_LOADED:
         return
-    from . import deepseek_request_transport as _deepseek_request_transport  # noqa: F401
+    from . import deepseek_request_transport as _deepseek_request_transport
 
     _REQUEST_TRANSPORT_BUILTINS_LOADED = True
 

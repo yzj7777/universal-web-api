@@ -2,7 +2,6 @@
 import copy
 import importlib.util
 import json
-import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock
 

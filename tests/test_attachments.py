@@ -1,7 +1,6 @@
 """Contract, safety, resource lifetime and upload-side-effect regressions."""
 import base64
 import io
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest

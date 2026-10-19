@@ -111,11 +111,13 @@ extend-exclude = [
 #   F401/F841           未使用的导入 / 未使用的局部变量
 #   I                   import 排序（isort 规则）
 #   W291/W293/W292      行尾空白、空行含空白、文件末尾缺换行
-#   E701/E702           一行多语句（冒号 / 分号）
 #   RUF100              无用的 noqa
 #   UP015/RUF010        冗余 open 模式、多余的 f-string 类型转换
 #
-# 暂未启用（有意为之，见计划）：
+# 暂未启用（有意为之，见 docs/plans/REFACTOR_PLAN-2026-10.md）：
+#   E701/E702 一行多语句（389 处）——ruff 无自动修复，需手工改写 389 行；
+#              且集中在覆盖率 <20% 的高复杂度文件里，纯风格收益换不来这个风险。
+#              待对应文件被拆分、有测试覆盖后再随该模块一并处理。
 #   PLC0415 函数内 import（690 处）——随导入环棘轮自然下降，不能单独强推
 #   T201 print（app/ 内 78 处）——需逐个改成 logger，单独一步
 #   B904 raise-without-from（99 处）——影响异常链可观测性，优先级高于风格类
@@ -124,15 +126,18 @@ select = [
     "F401", "F841",
     "I",
     "W291", "W293", "W292",
-    "E701", "E702",
     "RUF100", "UP015", "RUF010",
 ]
 
 [tool.ruff.lint.per-file-ignores]
 # 包 __init__.py 的“未使用导入”通常是刻意再导出，删掉会破坏对外 API。
 "__init__.py" = ["F401"]
-# 以下三个是兼容门面，职责就是再导出；收窄导出面属于重构步骤 5，此处先不误伤。
+# 以下是兼容门面 / 再导出枢纽，职责就是把名字透出去；收窄导出面属于重构步骤 5。
+# 其中 app/api/chat.py 尤其危险：测试通过 monkeypatch.setattr("app.api.chat.xxx")
+# 这类**字符串**引用访问其中的名字，任何静态导入分析（含 ruff F401）都看不见，
+# 删掉看似未用的导入会直接让测试 AttributeError。已实测踩到，勿轻易放开。
 "app/core/config.py" = ["F401"]
 "app/core/tab_pool.py" = ["F401"]
 "app/services/config/engine.py" = ["F401"]
+"app/api/chat.py" = ["F401"]
 "app/api/system/__init__.py" = ["F401"]

@@ -787,7 +787,6 @@ class StreamMonitor:
         if not elements:
             return None, None
 
-        strategy = self._get_final_target_strategy()
 
         if prefer_anchor:
             for ele in reversed(elements):
@@ -1849,8 +1848,6 @@ class StreamMonitor:
         recovery_output_seen = False
         recovery_output_held_logged = False
         stream_recovery_page_ready = False
-        deferred_hard_timeout_logged = False
-        stream_recovery_needs_post_refresh_check = False
         recovery_last_progress_at = phase_start
         recovery_rendered_image_seen = False
         active_stop_recovery_grace_seconds = self._active_stop_recovery_grace_seconds()
@@ -2425,7 +2422,6 @@ class StreamMonitor:
                     peak_text_len = 0
                     silence_start = time.time()
                     recovery_last_progress_at = time.time()
-                    stream_recovery_needs_post_refresh_check = True
                     time.sleep(2.0)
                     continue
                 if stream_recovery_refresh_attempts >= stream_recovery_max_refreshes:

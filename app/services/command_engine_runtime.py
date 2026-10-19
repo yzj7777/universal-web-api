@@ -183,11 +183,6 @@ class CommandEngineRuntimeMixin:
                         parent_ids.add(queue_key)
         elif preserve_deferred:
             existing = list(getattr(session, "_pending_post_workflow_commands", None) or [])
-            existing_ids = {
-                str((item.get("command") or {}).get("id", "")).strip()
-                for item in existing
-                if isinstance(item, dict)
-            }
             merged = self._dedupe_deferred_items(existing + deferred_commands)
             setattr(session, "_pending_post_workflow_commands", merged)
         else:

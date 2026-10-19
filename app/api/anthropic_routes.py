@@ -8,10 +8,8 @@ app/api/anthropic_routes.py - Anthropic Messages API compatibility layer
 
 from __future__ import annotations
 
-import codecs
 import json
 import re
-import time
 import uuid
 from typing import Any, AsyncIterator, Dict, List, Optional
 
@@ -31,7 +29,6 @@ from app.api.streaming_response import RequestStreamingResponse as StreamingResp
 from app.core.chat_job import PROTOCOL_ANTHROPIC_MESSAGES, iter_openai_sse_payloads, job_for, use_chat_job
 from app.core.config import get_logger
 from app.services.request_manager import request_manager
-from app.services.sse_utils import sse_frame_data_text
 from app.services.tool_calling import _decode_tool_arguments
 
 logger = get_logger("API.ANTHROPIC")

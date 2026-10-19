@@ -15,10 +15,8 @@ from bs4 import NavigableString, Tag
 
 from app.services.sse_utils import sse_frame_data_text
 from app.services.tool_calling_common import (
-    _LEGACY_XML_ARG_TAG,
     _LEGACY_XML_CALL_TAG,
     _LEGACY_XML_WRAPPER_TAG,
-    _PREFERRED_XML_ARG_TAG,
     _PREFERRED_XML_CALL_TAG,
     _PREFERRED_XML_WRAPPER_TAG,
     _contains_unicode_surrogate,

@@ -5,7 +5,6 @@
 """
 
 import copy
-import json
 from typing import Any, Dict, List, Optional
 
 from .engine_common import _MISSING, DEFAULT_PRESET_NAME, DEFAULT_WORKFLOW, logger

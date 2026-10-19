@@ -263,7 +263,7 @@ def _arena_non_retryable_response(message: str, code: str) -> JSONResponse:
 
 
 # 动态目录函数符号导出（供 monkeypatch / 兼容测试使用）
-from app.services.arena_direct_models import (  # noqa: E402
+from app.services.arena_direct_models import (
     build_openai_model_entries,
     get_arena_direct_catalog_for_tab,
     get_arena_direct_model_public_id,

@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from app.core.config import BrowserConstants, get_tutorial_selectors_url, logger
+from app.core.config import BrowserConstants, logger
 from app.core.driver import driver_for_tab
 
 _ELEMENT_TIMING_LOG_THRESHOLD = 0.5
@@ -270,7 +270,6 @@ class ElementFinder:
             return ele
 
         deadline = time.perf_counter() + total_timeout
-        is_first_round = True
 
         while True:
             for group in groups:
@@ -292,7 +291,6 @@ class ElementFinder:
                 if is_valid:
                     return ele
 
-            is_first_round = False
             if time.perf_counter() >= deadline:
                 break
             time.sleep(0.05)
@@ -355,7 +353,6 @@ class ElementFinder:
 
         total_timeout = max(0.02, float(timeout or 0.0))
         deadline = time.perf_counter() + total_timeout
-        is_first_round = True
 
         while True:
             for group in groups:
@@ -370,7 +367,6 @@ class ElementFinder:
                     return ele
                 candidates.append(ele)
 
-            is_first_round = False
             if candidates or time.perf_counter() >= deadline:
                 break
             time.sleep(0.05)

@@ -4,13 +4,12 @@ import json
 import os
 import random
 import re
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List
 
 from app.core.config import BrowserConstants, logger
-from app.utils.image_handler import extract_images_from_messages
 
 if TYPE_CHECKING:
-    from .main import BrowserCore
+    pass
 
 
 class BrowserPromptMixin:

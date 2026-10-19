@@ -16,7 +16,6 @@ import hashlib
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
-from urllib.parse import urlsplit
 
 from PIL import Image, ImageOps
 

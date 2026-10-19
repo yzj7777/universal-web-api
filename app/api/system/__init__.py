@@ -10,11 +10,11 @@
 本模块再导出原有模块级名字，``from app.api import system; system.<name>`` 仍可用。
 """
 
-import app.api.system.common  # noqa: F401
-import app.api.system.diagnostics  # noqa: F401
-import app.api.system.health  # noqa: F401
-import app.api.system.settings  # noqa: F401
-import app.api.system.updates  # noqa: F401
+import app.api.system.common
+import app.api.system.diagnostics
+import app.api.system.health
+import app.api.system.settings
+import app.api.system.updates
 from app.api.system.common import (
     _DYNAMIC_SELECTOR_CLASS_RE,
     _NUMERIC_ENV_KEYS,

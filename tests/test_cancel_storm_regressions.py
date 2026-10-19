@@ -1,7 +1,6 @@
 """Real cancellation scopes used by Starlette, not only asyncio Task.cancel()."""
 import asyncio
 import importlib
-import json
 import threading
 import time
 from types import SimpleNamespace

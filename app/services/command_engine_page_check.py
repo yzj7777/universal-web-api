@@ -12,7 +12,7 @@ from app.core.driver import driver_for_tab
 from app.services.command_engine_common import _NON_ASCII_RE, _WHITESPACE_RE, _WORD_LIKE_KEYWORD_RE, logger
 
 if TYPE_CHECKING:
-    from app.core.tab_pool import TabSession  # noqa: F401
+    from app.core.tab_pool import TabSession
 
 
 class CommandEnginePageCheckMixin:

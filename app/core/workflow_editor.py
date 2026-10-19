@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from app.core.config import BrowserConstants, logger
+from app.core.config import logger
 from app.core.driver import driver_for_tab
 
 

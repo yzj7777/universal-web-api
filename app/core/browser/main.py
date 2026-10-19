@@ -1,7 +1,7 @@
 # app/core/browser/main.py
 
 import threading
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Optional
 
 from app.core.config import BrowserConnectionError, BrowserConstants, SSEFormatter, logger
 from app.core.tab_pool import TabPoolManager

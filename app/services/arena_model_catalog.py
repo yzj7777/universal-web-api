@@ -7,12 +7,12 @@ import json
 import os
 import re
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set
 
 from app.core.config import logger
-from app.utils.site_url import extract_remote_site_domain, route_domain_matches
+from app.utils.site_url import route_domain_matches
 
 ARENA_MODEL_CATALOG_CONFIG_PATH = Path(
     os.getenv(

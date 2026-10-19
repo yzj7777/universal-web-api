@@ -26,11 +26,9 @@ from app.core.elements import ElementFinder
 from app.core.tab_pool import get_clipboard_lock
 from app.utils.file_paste import (
     DEFAULT_TEMP_FILE_TYPE,
-    copy_file_to_clipboard,
     create_temp_file,
     normalize_temp_file_type,
 )
-from app.utils.human_mouse import smooth_move_mouse
 from app.utils.platform import get_primary_modifier_key
 
 # ================= 常量配置 =================
@@ -2071,7 +2069,6 @@ class TextInputHandler:
         if is_rich_editor:
             actual_core = re.sub(r'\s+', '', actual)
             if actual_core == expected_core:
-                diff = len(actual) - len(expected_text)
                 return
 
         # 失败：尝试重试

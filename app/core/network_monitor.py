@@ -2338,7 +2338,7 @@ class NetworkMonitor:
                         except Exception as media_exc:
                             logger.debug(f"[NetworkMonitor] 媒体结果记录失败（忽略）: {media_exc}")
                         try:
-                            media_state = self._get_media_generation_state_cached(
+                            self._get_media_generation_state_cached(
                                 active_stream_body,
                                 parse_result,
                             )
@@ -2917,7 +2917,7 @@ class NetworkMonitor:
             except Exception as media_exc:
                 logger.debug(f"[NetworkMonitor] 媒体结果记录失败（忽略）: {media_exc}")
             try:
-                media_state = self._get_media_generation_state_cached(
+                self._get_media_generation_state_cached(
                     raw_body,
                     parse_result,
                 )

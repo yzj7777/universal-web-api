@@ -23,7 +23,6 @@ from app.core.config import (
 )
 from app.core.driver import as_element, driver_for_tab
 from app.core.page_lifecycle import BACKGROUND_WAKE_CDP_TIMEOUT
-from app.core.workflow.model_selection import execute_model_selection
 from app.services.arena_direct_models import (
     resolve_arena_direct_model,
 )

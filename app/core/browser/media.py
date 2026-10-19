@@ -2,7 +2,6 @@
 
 import base64
 import binascii
-import json
 import os
 import shutil
 import subprocess
@@ -13,8 +12,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 from urllib.parse import urlparse, urlsplit
 
-import requests
-
 from app import paths
 from app.core.background_image_downloader import (
     background_image_downloader,
@@ -23,7 +20,7 @@ from app.core.background_image_downloader import (
     get_image_download_partition,
     normalize_remote_image_url,
 )
-from app.core.config import AppConfig, BrowserConstants, logger
+from app.core.config import AppConfig, logger
 from app.core.driver import as_element, driver_for_tab
 from app.core.tab_pool import TabSession
 from app.models.schemas import (
@@ -45,7 +42,7 @@ from app.utils.remote_resource import get_public_remote_resource
 from app.utils.site_url import extract_remote_site_domain
 
 if TYPE_CHECKING:
-    from .main import BrowserCore
+    pass
 
 
 class BrowserMediaMixin:
@@ -844,7 +841,6 @@ class BrowserMediaMixin:
         dom_image_detected: bool = False,
         dom_final_image_urls: Optional[List[str]] = None,
     ) -> tuple[bool, Dict[str, Any]]:
-        modalities = self._media_modalities(image_config)
         enabled_types = self._media_enabled_types(image_config)
         stream_media_count = sum(1 for item in (stream_media_items or []) if isinstance(item, dict))
         dom_stream_media_count = sum(1 for item in (dom_stream_media_items or []) if isinstance(item, dict))
@@ -3017,7 +3013,6 @@ class BrowserMediaMixin:
         import base64
         import uuid
         from datetime import datetime
-        from pathlib import Path
 
         result = []
 

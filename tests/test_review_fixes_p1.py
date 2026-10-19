@@ -111,7 +111,6 @@ def test_backup_with_dashboard_auth_requires_token(synthetic_env_dir, monkeypatc
 
 
 def test_backup_import_ignores_redaction_placeholders(synthetic_env_dir, monkeypatch):
-    from app.api import system
     from app.api.system import settings as system_settings
 
     monkeypatch.setattr(system_settings, "_schedule_service_restart", lambda *_a, **_k: None)
@@ -266,7 +265,6 @@ def test_main_lifespan_warns_public_bind_without_auth(monkeypatch):
 
 def test_v300_env_example_compat_allows_startup_with_warnings(monkeypatch):
     """3.0.0 模板兼容：AUTH_ENABLED/DASHBOARD_AUTH_ENABLED 为 your-secret-here 且 APP_HOST=0.0.0.0 时只告警不拒绝启动。"""
-    import importlib.util
 
     import main
     from app.core.config import AppConfig
@@ -307,7 +305,7 @@ def test_env_example_is_safe_to_copy():
 # S8 / S9 · 活动内容落盘与同源提供
 # ---------------------------------------------------------------------------
 
-from app.utils import media_safety as ms  # noqa: E402
+from app.utils import media_safety as ms
 
 SVG_PAYLOAD = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>' + b" " * 1200
 HTML_PAYLOAD = b"<!doctype html><html><script>alert(document.domain)</script></html>" + b" " * 1200

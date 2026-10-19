@@ -10,7 +10,6 @@ app/utils/paste.py - 通用粘贴工具
 import json
 import random
 import time
-from typing import Optional
 
 from app.core.config import get_logger
 from app.core.driver import driver_for_tab
@@ -140,7 +139,7 @@ def safe_universal_paste(page, selector: str, text_content: str,
                 safe_chunk = json.dumps(chunk)
 
                 # 调用 JS 写入
-                result = driver_for_tab(page).run_js(f"return window.universalAppend(arguments[0], {safe_chunk})", ele)
+                driver_for_tab(page).run_js(f"return window.universalAppend(arguments[0], {safe_chunk})", ele)
 
                 # 短暂等待让页面更新
                 time.sleep(0.05)
@@ -150,7 +149,6 @@ def safe_universal_paste(page, selector: str, text_content: str,
                 after_len = after_len or 0
 
                 # 验证是否成功写入
-                expected_len = before_len + len(chunk)
                 actual_increase = after_len - before_len
 
                 # 允许小幅误差（可能有换行符转换等）

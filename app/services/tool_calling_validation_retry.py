@@ -15,7 +15,6 @@ from typing import Any, Dict, List, Optional
 from jsonschema.validators import validator_for
 
 from app.services.tool_calling_common import (
-    _PREFERRED_XML_ARG_TAG,
     _PREFERRED_XML_CALL_TAG,
     _PREFERRED_XML_WRAPPER_TAG,
     _contains_unicode_surrogate,

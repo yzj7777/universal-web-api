@@ -40,7 +40,7 @@ class _FakeBrowser:
 @pytest.fixture
 def app_with_fake_browser(monkeypatch):
     import main
-    from app.api import chat, tab_routes
+    from app.api import chat
     from app.api.openai import runtime as tab_runtime
 
     for name in ("AUTH_ENABLED", "AUTH_TOKEN"):

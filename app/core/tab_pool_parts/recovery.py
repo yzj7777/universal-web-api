@@ -442,7 +442,7 @@ class TabRecoveryService:
         def _runner():
             try:
                 result["value"] = fn()
-            except BaseException as e:  # noqa: BLE001 - 结果原样转抛给调用方
+            except BaseException as e:
                 result["error"] = e
             finally:
                 done.set()

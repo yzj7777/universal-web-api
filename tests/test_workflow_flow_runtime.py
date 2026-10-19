@@ -10,7 +10,6 @@ from app.core.workflow.flow_runtime import (
     FlowValidationError,
     FlowVariableError,
     Variables,
-    capture_page_state,
     validate_inputs,
     validate_workflow,
 )
@@ -127,7 +126,7 @@ def test_no_replay_after_side_effect_or_output_and_cancellation_never_caught():
 
 def test_recovered_sse_error_is_not_emitted():
     p=FlowProgram([node('TRY',{'steps':[node('WAIT')],'fallback':[]})])
-    i=p.next_leaf(0)
+    p.next_leaf(0)
     def fail(*_):yield 'data: {"error":{"message":"bad"}}\n\n'
     drive(p,fail)
     assert any(t['status']=='fallback' for t in p.trace)

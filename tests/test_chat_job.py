@@ -144,7 +144,7 @@ class _FakeBrowser:
 def test_each_protocol_is_tagged_and_counted(monkeypatch):
     httpx = pytest.importorskip("httpx")
     import main
-    from app.api import chat, tab_routes
+    from app.api import chat
     from app.api.openai import runtime as tab_runtime
     from app.services.metrics import CHAT_REQUESTS
 
@@ -180,7 +180,7 @@ def test_x_request_id_is_linked_to_request_history(monkeypatch):
     """R2-7：客户端拿到的 X-Request-ID 能在请求历史里查到，与内部 req-xxx 关联。"""
     httpx = pytest.importorskip("httpx")
     import main
-    from app.api import chat, tab_routes
+    from app.api import chat
     from app.api.openai import runtime as tab_runtime
     from app.services.request_manager import request_manager
 

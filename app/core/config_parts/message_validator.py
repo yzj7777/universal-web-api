@@ -3,7 +3,7 @@ app/core/config_parts/message_validator.py - 消息验证器模块
 """
 import ast
 import json
-from typing import Any, List, Optional, Tuple
+from typing import Any
 
 from .browser_constants import BrowserConstants
 

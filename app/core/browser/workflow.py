@@ -2,7 +2,6 @@
 
 import contextlib
 import json
-import random
 import re
 import time
 from typing import TYPE_CHECKING, Any, Callable, Dict, Generator, List, Mapping, Optional
@@ -19,21 +18,14 @@ from app.core.page_lifecycle import BACKGROUND_WAKE_CDP_TIMEOUT
 from app.core.tab_pool import TabSession
 from app.core.workflow import WorkflowExecutor
 from app.core.workflow.arena_direct_guard import (
-    ARENA_DIRECT_UNEXPECTED_BATTLE_REDIRECT,
-    ArenaDirectRecoveryError,
-    ArenaUnexpectedBattleRedirectError,
     is_arena_direct_preset,
     is_arena_unexpected_battle_url,
-    recover_arena_direct_page,
     resolve_arena_direct_entry_url,
     resolve_arena_direct_recovery_url,
     workflow_has_new_chat_step,
 )
 from app.core.workflow.arena_send_watchdog import (
     ARENA_SEND_NO_TARGET_AFTER_RETRY,
-    ArenaSendRetryRefreshError,
-    ArenaSendWatchdogCancelled,
-    refresh_arena_page_for_retry,
 )
 from app.core.workflow.error_handlers import (
     get_workflow_retry_handler,
@@ -43,7 +35,6 @@ from app.core.workflow.flow_runtime import FlowProgram, capture_page_state, has_
 from app.core.workflow.input_chunking import PromptChunk, plan_prompt_chunks
 from app.models.schemas import get_modality_run_policy, is_modality_enabled
 from app.services.arena_direct_models import (
-    get_model_catalog_preset,
     resolve_arena_direct_model,
 )
 from app.services.arena_image_generation import (
@@ -58,7 +49,7 @@ from app.utils.image_validation import filter_reference_images
 from app.utils.site_url import extract_remote_site_domain, tab_url_matches
 
 if TYPE_CHECKING:
-    from .main import BrowserCore
+    pass
 
 
 class BrowserWorkflowMixin:

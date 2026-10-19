@@ -50,7 +50,7 @@ from app.utils.site_rules import derive_site_card_id, get_site_rule
 from .cache import ConfigCache
 
 # R2-3：模块级定义迁到 engine_common，这里重新导出以保持兼容（外部与测试都从 engine 导入这些名字）
-from .engine_common import (  # noqa: E402,F401
+from .engine_common import (
     _MISSING,
     _SITE_STARTUP_JS_PATTERNS,
     DEFAULT_PRESET_NAME,
@@ -63,12 +63,12 @@ from .engine_common import (  # noqa: E402,F401
     get_default_stream_config,
     logger,
 )
-from .engine_local_overrides import ConfigLocalOverridesMixin  # noqa: E402
-from .engine_media import ConfigMediaMixin  # noqa: E402
-from .engine_migrations import ConfigMigrationsMixin  # noqa: E402
-from .engine_presets import ConfigPresetsMixin  # noqa: E402
-from .engine_sites import ConfigSitesMixin  # noqa: E402
-from .engine_stream import ConfigStreamMixin  # noqa: E402
+from .engine_local_overrides import ConfigLocalOverridesMixin
+from .engine_media import ConfigMediaMixin
+from .engine_migrations import ConfigMigrationsMixin
+from .engine_presets import ConfigPresetsMixin
+from .engine_sites import ConfigSitesMixin
+from .engine_stream import ConfigStreamMixin
 from .managers import GlobalConfigManager, ImagePresetsManager
 from .processors import AIAnalyzer, HTMLCleaner, SelectorValidator
 from .site_store import SiteStore

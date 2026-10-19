@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, Dict, List
 from app.services.command_engine_common import logger
 
 if TYPE_CHECKING:
-    from app.core.tab_pool import TabSession  # noqa: F401
+    from app.core.tab_pool import TabSession
 
 
 class CommandEngineSchedulerMixin:

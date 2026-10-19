@@ -10,11 +10,11 @@
 """
 
 from app.api.openai import (
-    group,  # noqa: F401
-    shared,  # noqa: F401
-    tab,  # noqa: F401
-    tab_url,  # noqa: F401
-    url,  # noqa: F401
+    group,
+    shared,
+    tab,
+    tab_url,
+    url,
 )
 
 router = shared.router

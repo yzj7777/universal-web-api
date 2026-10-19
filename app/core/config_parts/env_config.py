@@ -6,10 +6,13 @@ import os
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 
-from app.paths import LOGS_DIR as DEFAULT_LOG_DIR
-from app.paths import PROJECT_ROOT
+# 下面两个是**再导出**：config_parts/__init__.py 与 app/core/config.py 以
+# DEFAULT_LOG_DIR / PROJECT_ROOT 之名对外提供，本文件内并不直接使用。
+# ruff 的 F401 只看单文件、识别不出这种跨文件再导出，故显式标注 noqa 说明意图。
+from app.paths import LOGS_DIR as DEFAULT_LOG_DIR  # noqa: F401
+from app.paths import PROJECT_ROOT  # noqa: F401
 
 
 def atomic_write_json(path: str | Path, payload: Any) -> None:

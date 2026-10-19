@@ -7,7 +7,6 @@ from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 from app.models.schemas import ADVANCED_FIELDS, PRESET_ADVANCED_FIELDS, SITE_ADVANCED_FIELDS
-from app.services.arena_direct_models import normalize_model_catalog_config
 
 
 class ConfigUpdateRequest(BaseModel):

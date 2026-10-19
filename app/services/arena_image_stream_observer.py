@@ -5,7 +5,7 @@ app/services/arena_image_stream_observer.py - Arena 生图守卫与流式监控�
 供 StreamMonitor 在生图会话中挂载。
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from app.core.config import logger
 from app.core.stream_observer import (

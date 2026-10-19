@@ -14,7 +14,7 @@ from app.core.config import command_log_context
 from app.services.command_engine_common import FOLLOW_DEFAULT_PRESET, logger
 
 if TYPE_CHECKING:
-    from app.core.tab_pool import TabSession  # noqa: F401
+    from app.core.tab_pool import TabSession
 
 
 class CommandEngineStoreMixin:

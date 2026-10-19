@@ -6,7 +6,6 @@ Windows / macOS 桌面环境可直接运行。需要 Chromium（UWAPI_TEST_CHROM
 
 期望最后一行：RESULT recycled | freed | froze | resumed
 """
-import glob
 import http.server
 import os
 import socket

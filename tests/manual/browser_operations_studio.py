@@ -4,7 +4,6 @@ Run with a local development server. Config JSON hashes must remain unchanged.
 """
 import asyncio
 import hashlib
-import json
 import os
 import re
 import time

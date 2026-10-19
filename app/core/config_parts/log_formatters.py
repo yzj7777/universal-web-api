@@ -11,7 +11,7 @@ import threading
 import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any, List, Optional, Tuple
+from typing import Any, Optional
 
 from .browser_constants import _BrowserConstantEnabledFilter
 from .env_config import DEFAULT_LOG_DIR, PROJECT_ROOT

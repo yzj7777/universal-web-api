@@ -250,7 +250,6 @@ def _s7_get(monkeypatch, path, client_host, headers=None, env=None, browser=None
     from httpx import ASGITransport, AsyncClient
 
     import main
-    from app.api import system
     from app.api.system import runtime as system_runtime
 
     for name in ("AUTH_TOKEN", "DASHBOARD_AUTH_TOKEN", "AUTH_ENABLED", "TRUST_PROXY_HEADERS"):

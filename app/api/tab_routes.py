@@ -10,10 +10,10 @@
 本模块保留原有模块级名字的再导出，``tab_routes.<name>`` 仍可访问。
 """
 
-import app.api.openai.group  # noqa: F401
-import app.api.openai.shared  # noqa: F401
-import app.api.openai.tab  # noqa: F401
-import app.api.openai.tab_url  # noqa: F401
+import app.api.openai.group
+import app.api.openai.shared
+import app.api.openai.tab
+import app.api.openai.tab_url
 import app.api.openai.url  # noqa: F401
 from app.api.openai.group import (
     _collect_models_for_route_group,

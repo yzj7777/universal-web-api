@@ -13,10 +13,6 @@ from typing import Any, Dict, Optional
 from .browser_constants import _BrowserConstantEnabledFilter
 from .cute_translator import (
     _add_suppressed_marker,
-    _cuteify_debug_message,
-    _cuteify_error_message,
-    _cuteify_info_message,
-    _cuteify_warning_message,
 )
 from .env_config import AppConfig
 from .log_formatters import (

@@ -179,7 +179,6 @@ def test_embedded_css_matches_canonical_source():
 
 
 def test_visual_feedback_reports_resolved_target_and_honors_page_cancel(monkeypatch):
-    import time
 
     from app.api import config_workflow_support as support
     phases=[];calls=[];instances=[]
