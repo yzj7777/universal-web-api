@@ -81,16 +81,11 @@
    "app.services.catalog_routing"
   ],
   [
-   "app.api.system",
-   "app.api.system.diagnostics",
-   "app.api.system.health"
-  ],
-  [
    "app.services.arena_image_generation",
    "app.services.arena_image_stream_observer"
   ]
  ],
- "cycles": 4,
+ "cycles": 3,
  "largest_component": 61,
  "modules": [
   "app.api",
@@ -105,9 +100,6 @@
   "app.api.provider",
   "app.api.routes",
   "app.api.stream_helpers",
-  "app.api.system",
-  "app.api.system.diagnostics",
-  "app.api.system.health",
   "app.api.tab_routes",
   "app.core",
   "app.core.browser",
@@ -175,5 +167,5 @@
   "app.services.request_manager",
   "app.services.result_event_bridge"
  ],
- "modules_in_cycle": 81
+ "modules_in_cycle": 78
 }

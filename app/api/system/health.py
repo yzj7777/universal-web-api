@@ -5,9 +5,14 @@ import time
 from fastapi import Depends, Request
 from fastapi.responses import JSONResponse
 
+# 从子模块直接导入而非 `from app.api.system import runtime`：
+# 后者要求 app.api.system 的 __init__ 先执行完，与 __init__ 导入本模块形成环。
+# 写成 `import ... as runtime` 既断开环，又保留 runtime.get_browser() 这种
+# 属性访问形式——测试用 monkeypatch.setattr(runtime, "get_browser", ...) 打桩，
+# 若改成 `from ... import get_browser` 拿到的是直接引用，桩会失效。
+import app.api.system.runtime as runtime
 from app import __version__ as APP_VERSION
 from app.api.deps import verify_dashboard_auth as verify_auth
-from app.api.system import runtime
 from app.api.system.common import (
     router,
 )

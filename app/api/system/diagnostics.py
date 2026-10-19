@@ -12,8 +12,13 @@ from typing import Any, Dict, List, Optional
 import psutil as _psutil
 from fastapi import Depends, HTTPException, Request
 
+# 从子模块直接导入而非 `from app.api.system import runtime`：
+# 后者要求 app.api.system 的 __init__ 先执行完，与 __init__ 导入本模块形成环。
+# 写成 `import ... as runtime` 既断开环，又保留 runtime.get_browser() 这种
+# 属性访问形式——测试用 monkeypatch.setattr(runtime, "get_browser", ...) 打桩，
+# 若改成 `from ... import get_browser` 拿到的是直接引用，桩会失效。
+import app.api.system.runtime as runtime
 from app.api.deps import verify_dashboard_auth as verify_auth
-from app.api.system import runtime
 from app.api.system.common import (
     _load_env_config_from_file,
     _read_json_object_or_400,
