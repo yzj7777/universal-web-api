@@ -23,7 +23,9 @@ jobs:
         with:
           python-version: "3.12"
           enable-cache: true
-      - run: uv sync --frozen --no-dev
+      # 注意：ruff 在 [dependency-groups].dev 里，用 --no-dev 会把它排除，
+      # 随后 `uv run --no-sync ruff` 直接以“找不到命令”退出（exit code 2）。
+      - run: uv sync --frozen
       - run: uv run --no-sync ruff check .
 
   test:
@@ -45,11 +47,16 @@ jobs:
       - run: uv sync --frozen
       # 只跑无需真实浏览器/已登录站点的子集；browser / real_browser 用例由本地或
       # 夜间任务执行（见 tests/manual/README.md 与 pyproject 的 markers）。
-      - run: uv run --no-sync pytest -q -m "not browser and not real_browser"
+      - run: uv run --no-sync pytest -q -m "not browser and not real_browser" --junitxml="${{ runner.temp }}/pytest-report.xml"
         env:
           # 干净克隆下依赖本地私有资源的用例由 conftest.py 自动 skip；
           # 这里显式关闭真实浏览器测试，避免 CI 试图下载 Chromium。
           UWAPI_SKIP_REAL_BROWSER: "1"
+      # 失败时把具体用例名转成 GitHub 注解，便于在 Actions 页与 API 上直接定位
+      # （日志下载在部分网络环境下不可用）。
+      - name: 汇总失败用例
+        if: failure()
+        run: uv run --no-sync python scripts/ci_report_failures.py "${{ runner.temp }}/pytest-report.xml"
 
   structure:
     name: 结构与产物一致性
