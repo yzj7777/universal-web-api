@@ -3289,11 +3289,3 @@ async def list_models(
         "data": data,
     }
 
-@router.get("/api/pool/status")
-async def get_pool_status(authenticated: bool = Depends(verify_dashboard_auth)):
-    """获取标签页池状态"""
-    try:
-        browser = get_browser(auto_connect=False)
-        return browser.get_pool_status()
-    except Exception as e:
-        return {"error": str(e), "initialized": False}

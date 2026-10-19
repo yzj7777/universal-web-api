@@ -240,3 +240,55 @@ def test_background_downloader_has_no_cwd_default():
     assert 'save_dir: str | Path = "download_images"' not in source
     assert "def set_save_dir(" in source
     assert "def clear_cache(" in source
+
+
+# ---------------------------------------------------------------------------
+# C2：面板管理端点收敛到 app/api/admin/，且依赖方向单向
+# ---------------------------------------------------------------------------
+
+ADMIN_MODULES = ("app/api/admin/pool.py", "app/api/admin/presets.py")
+
+
+def test_admin_package_exists_and_is_wired():
+    import app.api.admin as admin
+
+    assert hasattr(admin, "router")
+    paths = {
+        getattr(route, "path", "")
+        for route in admin.router.routes
+    }
+    assert "/api/pool/status" in paths
+    assert "/api/tab-pool/tabs" in paths
+    assert "/api/presets/{domain}" in paths
+
+
+def test_panel_endpoints_are_not_defined_in_protocol_modules():
+    """``/api/*`` 面板端点不应再写在协议/编排路由文件里。"""
+    offenders = []
+    checks = {
+        "app/api/chat.py": ("/api/",),
+        "app/api/tab_routes.py": ("/api/tab-pool/", "/api/presets/"),
+    }
+    for rel, prefixes in checks.items():
+        source = (ROOT / rel).read_text(encoding="utf-8")
+        for line in source.splitlines():
+            stripped = line.strip()
+            if not stripped.startswith("@router."):
+                continue
+            if any(f'"{prefix}' in stripped for prefix in prefixes):
+                offenders.append(f"{rel}: {stripped}")
+    assert not offenders, (
+        "面板管理端点应放在 app/api/admin/ 下：\n" + "\n".join(offenders)
+    )
+
+
+def test_admin_layer_dependency_direction_is_one_way():
+    """admin -> tab_routes 允许（复用未拆分的辅助），反向导入则是循环依赖。"""
+    admin_sources = {
+        rel: (ROOT / rel).read_text(encoding="utf-8") for rel in ADMIN_MODULES
+    }
+    assert any("from app.api.tab_routes import" in src for src in admin_sources.values()), (
+        "admin 模块应显式复用 tab_routes 的辅助函数（若已下沉，请同步更新此测试）"
+    )
+    tab_source = (ROOT / "app/api/tab_routes.py").read_text(encoding="utf-8")
+    assert "from app.api.admin" not in tab_source, "tab_routes 不得反向导入 admin（会形成循环依赖）"

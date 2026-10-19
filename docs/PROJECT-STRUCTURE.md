@@ -141,6 +141,7 @@ universal-web-api/
 | `adapter_routes.py` | 站点适配器在线更新：查询可用更新、应用更新、健康巡检、lint。 |
 | `metrics_routes.py` | `GET /metrics`，Prometheus 文本格式指标（无第三方依赖实现）。 |
 | `streaming_response.py` | `RequestStreamingResponse`：客户端断开时**及时关闭**异步生成器（防止请求堆积、标签页被长期占用）。 |
+| `admin/` | **面板管理端点层**（对应 FastAPI 的 `internal/admin.py` 约定）：`pool.py` 承载 `/api/tab-pool/*` 与 `GET /api/pool/status`，`presets.py` 承载 `/api/presets/*`。只搬代码不改 URL；依赖方向 `admin → tab_routes`（单向，复用尚未下沉的辅助函数）。 |
 
 ---
 

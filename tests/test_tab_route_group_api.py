@@ -2,6 +2,7 @@ import asyncio
 from types import SimpleNamespace
 
 from app.api import tab_routes
+from app.api.admin import pool as tab_pool_admin
 from app.core.browser.workflow import BrowserWorkflowMixin
 from app.services.request_manager import RequestContext
 from app.utils.tab_route_groups import normalize_route_groups
@@ -45,9 +46,10 @@ def test_tab_pool_config_persists_and_hot_reloads_route_groups(monkeypatch):
         }
     }
 
-    monkeypatch.setattr(tab_routes, "_read_browser_config", lambda: config)
+    # 标签页池管理端点已迁到 app.api.admin.pool，补丁要打在它自己的命名空间上
+    monkeypatch.setattr(tab_pool_admin, "_read_browser_config", lambda: config)
     monkeypatch.setattr(
-        tab_routes,
+        tab_pool_admin,
         "_write_browser_config_unlocked",
         lambda payload: written.update(payload),
     )
@@ -57,13 +59,13 @@ def test_tab_pool_config_persists_and_hot_reloads_route_groups(monkeypatch):
             runtime.update(kwargs)
 
     monkeypatch.setattr(
-        tab_routes,
+        tab_pool_admin,
         "get_browser",
         lambda auto_connect=False: SimpleNamespace(tab_pool=_Pool()),
     )
 
-    response = asyncio.run(tab_routes.update_tab_pool_config(
-        tab_routes.TabPoolConfigRequest(
+    response = asyncio.run(tab_pool_admin.update_tab_pool_config(
+        tab_pool_admin.TabPoolConfigRequest(
             allocation_mode="round_robin",
             enabled_route_methods=["domain", "route_group"],
             route_groups=[_group_payload()],

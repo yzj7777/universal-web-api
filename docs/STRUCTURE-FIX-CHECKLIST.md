@@ -22,7 +22,7 @@
 | B2 | 入口 | 新增 `app/__main__.py`，支持 `python -m app` | 低 | ✅ |
 | B3 | 防回归 | 新增 `tests/test_structure.py`（13 项结构棘轮） | 无 | ✅ |
 | C1 | 路径 | 新增 `app/paths.py`，消除 CWD 相对路径 + 启动时固定工作目录 | 中 | ✅ |
-| C2 | 暂缓 | 拆分 `tab_routes.py`(5142) / `chat.py`(3299) / `system.py`(2674) | — | ⏸ 见 §6 |
+| C2 | 分层 | 新增 `app/api/admin/`（pool + presets），路由表快照棘轮 | 中 | 🟡 部分完成（见 §6） |
 | C3 | 暂缓 | `config/` 只读 + `var/` 可写数据目录 | — | ⏸ 见 §6 |
 | C4 | 暂缓 | `src/` 布局、包改名 `app` → `uwapi` | — | ⏸ 见 §6 |
 
@@ -223,7 +223,7 @@ def main() -> None:
 
 | 指标 | 改动前 | 改动后 | 结论 |
 | --- | --- | --- | --- |
-| `pytest` 通过 | 1302 | **1319** | +17（15 项结构棘轮 + 2 项用例适配） |
+| `pytest` 通过 | 1302 | **1326** | +24（结构棘轮 + 路由表棘轮 + 用例适配） |
 | `pytest` 失败 | 2 | **2** | 同一批既有失败，未新增 |
 | `pytest` 跳过 | 157 | 157 | 不变 |
 | `ruff check .` | 通过 | 通过 | 无新增告警 |
@@ -317,11 +317,45 @@ python -m app
 `/repo/static/index.html`，`paths.download_dir()` 返回绝对目录，`ensure_project_cwd()`
 把 CWD 切回项目根——即「不是从项目根启动」也不再走偏。
 
-### C2 暂缓：拆分巨型路由文件
+### C2 进行中：拆分巨型路由文件（第一批已完成）
 
-`app/api/tab_routes.py`(5142) / `chat.py`(3299) / `system.py`(2674)。路由**注册顺序**会影响
-带路径参数的匹配（`/url/{route_domain}/...` vs 静态路径），必须逐一比对 `app.routes` 的最终顺序；
-建议按 `openai/ anthropic/ admin/` 重排时，用「导出 `app.routes` 快照 → 拆分 → 断言快照一致」的方式做。
+**第一批（已执行）**
+
+| 迁移 | 从 | 到 | 行数 |
+| --- | --- | --- | --- |
+| 标签页池管理（5 个端点 + 2 个请求模型） | `app/api/tab_routes.py` | `app/api/admin/pool.py` | 463 |
+| 站点预设管理（5 个端点 + 3 个请求模型） | `app/api/tab_routes.py` | `app/api/admin/presets.py` | 148 |
+| `GET /api/pool/status` | `app/api/chat.py` | `app/api/admin/pool.py` | — |
+
+结果：`tab_routes.py` **5142 → 4616 行**；面板端点的鉴权模型（`verify_dashboard_auth`）
+与调用方（控制面板）现在集中在一层，`/v1/*` 协议文件不再夹带管理接口。
+
+**关键约束（已固化成测试）**
+
+1. **URL 一个都没变**：新增 `tests/fixtures/route_table.json` + `tests/test_route_table.py`，
+   把 `app.routes` 的 134 条路径与允许的方法导出成基线；重构前后逐项比对，
+   另有一条测试禁止同一 `(path, method)` 被注册两次（防止 router 遮蔽）。
+   更新基线：`python tests/test_route_table.py --update`。
+2. **依赖方向单向**：`admin/pool.py` 复用 `tab_routes` 里尚未下沉的私有辅助
+   （浏览器配置锁、模型名/预设覆盖、路由组等），因此是 `admin → tab_routes`；
+   `test_admin_layer_dependency_direction_is_one_way` 断言反向导入不存在（否则成循环依赖）。
+3. **协议文件里不再有面板端点**：`test_panel_endpoints_are_not_defined_in_protocol_modules`
+   检查 `chat.py` 不含 `@router.*("/api/`、`tab_routes.py` 不含 `/api/tab-pool/` 与 `/api/presets/`。
+
+**迁移手法**：用 AST 计算每个函数/模型的 `(起始行, 结束行)`（含装饰器），
+从原文件**整段摘除**并原样拼进新模块，避免手抄引入差异；随后补齐 import、
+跑路由快照 + 全量回归。异常棘轮基线做了一次**纯搬迁**更新
+（`tab_routes` 69 → 55，`pool` +10，`presets` +5，总数不增）。
+
+**后续（未完成）**
+
+- `tab_routes.py` 仍有 4616 行：按 `/tab/{i}`、`/url/{domain}`、`/group/{id}`、`/tab-url/{token}`
+  继续拆成 `app/api/openai/` 下的四个模块；拆分时沿用同一套「先导出路由快照 → 再搬代码」流程。
+- `chat.py` 3299 行：`/v1/chat/completions`、`/v1/responses`、`/v1/models` 三块可各自独立。
+- `system.py` 2674 行：`/health`、`/api/settings/*`、`/api/update/*`、`/api/system/*`
+  应按「探活 / 设置 / 更新 / 诊断」四组分别落到 `admin/` 与 `system/`。
+- 迁移完成后，`admin/pool.py` 里对 `tab_routes` 私有辅助的依赖可下沉到
+  `app/api/admin/tab_pool_support.py` 或 `app/services/tab_pool_admin.py`，彻底断开与巨型文件的耦合。
 
 ### C3 `config/` 只读 + `var/` 可写
 
@@ -343,6 +377,11 @@ python -m app
 删除    app/core/parsers/mimo_parser.py
 新增    .github/workflows/ci.yml
 新增    app/__main__.py
+新增    app/api/admin/__init__.py
+新增    app/api/admin/pool.py
+新增    app/api/admin/presets.py
+新增    tests/test_route_table.py
+新增    tests/fixtures/route_table.json
 新增    app/paths.py
 新增    app/update/__init__.py
 新增    tests/test_structure.py
@@ -372,6 +411,8 @@ python -m app
 修改    app/core/parsers/mimo_runtime_parser.py
 修改    tests/conftest.py（autouse 隔离媒体目录）
 修改    tests/test_review_fixes_p1.py / tests/test_review_fixes_p2.py（写文件目录）
+修改    tests/test_tab_route_group_api.py（补丁目标改到 admin.pool）
+修改    app/api/chat.py / app/api/tab_routes.py / app/api/routes.py（端点搬迁）
 修改    tests/test_repo_hygiene.py
 修改    tests/fixtures/broad_except_ratchet.json
 修改    README.md / README.zh-CN.md / README.en.md
