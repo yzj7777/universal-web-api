@@ -270,7 +270,7 @@ var/                    # 可写，整目录 gitignore，支持 UWAPI_DATA_DIR �
 
 ---
 
-### P1-4 18 个文件超过 1000 行，其中 3 个超过 3000 行　⏸ 暂缓（C2）
+### P1-4 18 个文件超过 1000 行，其中 3 个超过 3000 行　🟡 部分修复（C2 第一批）
 
 ```
 5142  app/api/tab_routes.py
@@ -309,7 +309,7 @@ app/api/
 
 ---
 
-### P1-5 面板管理端点没有独立层　⏸ 暂缓（C2）
+### P1-5 面板管理端点没有独立层　🟡 部分修复（C2 第一批，`app/api/admin/`）
 
 | 端点 | 现在在哪 |
 | --- | --- |
@@ -563,8 +563,8 @@ src/universal_web_api/...
 - [x] **B2** `app/__main__.py`（`python -m app`）；`create_app()` 工厂与 `[project.scripts]` 仍待做（`package = false` 下 console script 无法安装）
 - [ ] **B3** `app/core/paths.py`，消灭 24 处 CWD 相对路径
 - [ ] **B4** `config/`（只读）与 `var/`（可写）分离 + 迁移脚本
-- [ ] **B5** `app/api/` 按 `openai/ anthropic/ admin/` 重排（URL 不变）
-- [ ] **B6** `tab_routes.py`(5142) / `chat.py`(3299) / `system.py`(2674) 拆分
+- [x] **B5**（部分）`app/api/admin/` 已建立：`/api/tab-pool/*`、`/api/pool/status`、`/api/presets/*` 已迁入；`openai/`、`anthropic/` 目录仍待建
+- [x] **B6**（部分）`tab_routes.py` 5142→4616；`chat.py` 去掉全部 `/api/` 端点；`system.py` 待拆
 - [ ] **B7** `core/config_parts` → `core/observability/`；`*_parts/` 去后缀
 - [ ] **C1** `static/` → `web/` + `docs/site/`
 - [ ] **C2** `docs/` 按 `architecture/guides/adr/history/assets` 重排
