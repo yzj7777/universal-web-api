@@ -112,8 +112,9 @@ def test_backup_with_dashboard_auth_requires_token(synthetic_env_dir, monkeypatc
 
 def test_backup_import_ignores_redaction_placeholders(synthetic_env_dir, monkeypatch):
     from app.api import system
+    from app.api.system import settings as system_settings
 
-    monkeypatch.setattr(system, "_schedule_service_restart", lambda *_a, **_k: None)
+    monkeypatch.setattr(system_settings, "_schedule_service_restart", lambda *_a, **_k: None)
     resp = _request(_backup_app(), "POST", "/api/settings/backup",
                     json_body={"files": {"env": {"AUTH_TOKEN": "***", "HELPER_MODEL": "y"}}})
     assert resp.status_code == 200, resp.text

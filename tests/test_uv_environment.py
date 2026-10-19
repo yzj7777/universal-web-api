@@ -119,7 +119,7 @@ def test_bootstrap_runtime_steps_exist():
 def test_restart_does_not_rely_on_exit_code_3():
     relaunch = (ROOT / "app" / "runtime" / "relaunch.py").read_text(encoding="utf-8")
     assert "os.execv" in relaunch
-    for rel in ("main.py", "app/api/system.py"):
+    for rel in ("main.py", "app/api/system/settings.py"):
         source = (ROOT / rel).read_text(encoding="utf-8")
         assert "restart_service" in source, rel
         assert "os._exit(3)" not in source, rel

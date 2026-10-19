@@ -137,7 +137,7 @@ universal-web-api/
 | `config_route_models.py` | `config_routes.py` 用的 Pydantic 请求模型与预设规范化辅助。 |
 | `config_compare_support.py` | 「与官方 main 分支配置对比」的实现辅助（拉取远端配置、计算差异）。 |
 | `config_workflow_support.py` | 工作流编辑器的辅助函数（注入脚本、消费前端动作、脚本缓存）。 |
-| `system.py` | **系统与运维 API**：`/health`、日志读取/清空、`.env` 读写、设置备份/恢复、浏览器常量、更新保留规则、选择器调试、强制释放/取消请求、系统统计、请求历史（含单条详情）、自动更新检查/切换/状态。 |
+| `system/` | **系统与运维 API 包**：`health.py`（`/health`、`/api/logs`）、`settings.py`（`/api/settings/*`：.env 读写、备份/恢复、浏览器常量、更新保留规则）、`updates.py`（`/api/update/*` 与启动时更新检查）、`diagnostics.py`（`/api/debug/*`、`/api/system/*`：选择器调试、强制释放/取消、进程/磁盘统计、请求历史）、`common.py`（文件/`.env`/重启公共辅助）、`runtime.py`（`get_browser`、`request_manager`）。`__init__.py` 为聚合层并再导出原有名字。 |
 | `browser_routes.py` | 受控浏览器集成接口：仅回环/认证可用，`POST /api/browser/open-profile-url` 在**指定 Chrome 配置**里打开 URL。 |
 | `cmd_routes.py` | 命令系统 API：命令与分组 CRUD、启停、排序、重命名、`/test` 试跑、分组执行、执行结果存取、图片资产上传；对 `secret` 字段做脱敏与占位符还原。 |
 | `provider.py` | 机器可读的能力与状态：`GET /v1/provider/capabilities`（支持的协议/特性/模型能力）、`GET /v1/provider/status`（浏览器连接、标签页池、请求状态，不含密钥）。 |

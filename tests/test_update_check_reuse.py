@@ -5,6 +5,7 @@ from unittest.mock import Mock
 import pytest
 import updater
 from app.api import system
+from app.api.system import updates as system_updates
 from app.runtime import bootstrap
 
 
@@ -25,10 +26,10 @@ def test_consume(monkeypatch, change):
 def test_schedule_reuses_without_thread(monkeypatch):
     monkeypatch.setenv('GITHUB_REPO', updater.DEFAULT_REPO)
     monkeypatch.setenv('UWAPI_UPDATE_CHECK_RESULT', json.dumps(payload()))
-    monkeypatch.setattr(system, '_startup_update_check_scheduled', False)
-    monkeypatch.setattr(system, '_update_check_state', {'checking': False})
+    monkeypatch.setattr(system_updates, '_startup_update_check_scheduled', False)
+    monkeypatch.setattr(system_updates, '_update_check_state', {'checking': False})
     thread = Mock()
-    monkeypatch.setattr(system._threading, 'Thread', thread)
+    monkeypatch.setattr(system_updates._threading, 'Thread', thread)
     system.schedule_startup_update_check()
     thread.assert_not_called()
     assert system._get_update_check_state()['checked']
@@ -36,10 +37,10 @@ def test_schedule_reuses_without_thread(monkeypatch):
 
 def test_missing_result_retries(monkeypatch):
     monkeypatch.delenv('UWAPI_UPDATE_CHECK_RESULT', raising=False)
-    monkeypatch.setattr(system, '_startup_update_check_scheduled', False)
-    monkeypatch.setattr(system, '_update_check_state', {'checking': False})
+    monkeypatch.setattr(system_updates, '_startup_update_check_scheduled', False)
+    monkeypatch.setattr(system_updates, '_update_check_state', {'checking': False})
     thread = Mock()
-    monkeypatch.setattr(system._threading, 'Thread', thread)
+    monkeypatch.setattr(system_updates._threading, 'Thread', thread)
     system.schedule_startup_update_check()
     thread.return_value.start.assert_called_once()
 

@@ -22,7 +22,7 @@
 | B2 | 入口 | 新增 `app/__main__.py`，支持 `python -m app` | 低 | ✅ |
 | B3 | 防回归 | 新增 `tests/test_structure.py`（13 项结构棘轮） | 无 | ✅ |
 | C1 | 路径 | 新增 `app/paths.py`，消除 CWD 相对路径 + 启动时固定工作目录 | 中 | ✅ |
-| C2 | 分层 | 新增 `app/api/admin/`、`app/api/openai/`、`stream_helpers.py`、`openai_responses_support.py`，路由表快照棘轮 | 中 | 🟡 部分完成（见 §6） |
+| C2 | 分层 | 新增 `app/api/admin/`、`app/api/openai/`、`app/api/system/`、`stream_helpers.py`、`openai_responses_support.py`，路由表快照棘轮 | 中 | 🟡 基本完成（见 §6） |
 | C3 | 暂缓 | `config/` 只读 + `var/` 可写数据目录 | — | ⏸ 见 §6 |
 | C4 | 暂缓 | `src/` 布局、包改名 `app` → `uwapi` | — | ⏸ 见 §6 |
 
@@ -318,7 +318,7 @@ python -m app
 `/repo/static/index.html`，`paths.download_dir()` 返回绝对目录，`ensure_project_cwd()`
 把 CWD 切回项目根——即「不是从项目根启动」也不再走偏。
 
-### C2 进行中：拆分巨型路由文件（第一、二、三批已完成）
+### C2 进行中：拆分巨型路由文件（第一至四批已完成）
 
 **第一批（已执行）**
 
@@ -358,6 +358,32 @@ python -m app
 `_store_responses_state`（测试直接 patch）、`_append_response_input_item` /
 `_responses_input_to_messages` / `_responses_request_to_chat_request`（依赖上述状态缓存与请求上下文）、
 三个端点与 `_stream_*_with_lifecycle`。
+
+**第四批（已执行）：`system.py` 按「探活 / 设置 / 更新 / 诊断」四拆**
+
+| 迁移 | 从 | 到 | 行数 |
+| --- | --- | --- | --- |
+| `/health`、`/api/logs`（GET/DELETE） | `app/api/system.py` | `app/api/system/health.py` | 92 |
+| `/api/settings/*`（.env、备份、浏览器常量、更新保留项） | 同上 | `app/api/system/settings.py` | 804 |
+| `/api/update/*` | 同上 | `app/api/system/updates.py` | 266 |
+| `/api/debug/*`、`/api/system/*`（选择器测试、进程/磁盘统计、请求历史） | 同上 | `app/api/system/diagnostics.py` | 1468 |
+| 公共辅助（JSON/文件、原子写、`.env` 读写、重启调度） | 同上 | `app/api/system/common.py` | 81 |
+| 运行期依赖（`get_browser` / `request_manager`） | 同上 | `app/api/system/runtime.py` | 11 |
+
+结果：`system.py` **2675 行 → `app/api/system/` 包**，`app/api/system/__init__.py`（240 行）
+是聚合层：导入四个分组 + 再导出全部原有名字，`from app.api.system import router` 与
+`from app.api import system; system.<name>` 均保持不变。
+
+**与评审清单的差异（有意为之）**：清单原写「分别落到 `admin/` 与 `system/`」，实际四组都放在
+`app/api/system/`。原因：四个分组共用 `common.py`（`_read_json_object_or_400`、
+`_load_env_config_from_file`）；若把「设置/更新」放进 `admin/`，会形成
+`admin → system.common` 的反向依赖，比现状更难维护。`admin/` 仍只放 `/api/tab-pool/*`
+与 `/api/presets/*` 这类面板管理端点。
+
+**手法**：以带 `@router.*` 的端点为种子计算调用闭包，被两个及以上分组用到的函数/常量
+归入 `common`（本例只有 2 个函数 + 2 个常量）；校验无跨分组边后按闭包生成导入。
+常量（如 `_SYSTEM_STATS_CACHE`、`_update_check_state`）跟随唯一使用它的分组，
+避免可变全局被复制成两份。
 
 **第三批（已执行）：`tab_routes.py` 按 URL 前缀四拆**
 
@@ -434,6 +460,13 @@ python -m app
 新增    app/api/openai/group.py
 新增    app/api/openai/tab_url.py
 新增    app/api/openai/runtime.py
+新增    app/api/system/__init__.py
+新增    app/api/system/common.py
+新增    app/api/system/health.py
+新增    app/api/system/settings.py
+新增    app/api/system/updates.py
+新增    app/api/system/diagnostics.py
+新增    app/api/system/runtime.py
 新增    tests/test_route_table.py
 新增    tests/fixtures/route_table.json
 新增    app/paths.py
@@ -457,7 +490,7 @@ python -m app
 修改    app/core/extractors/media_extractor.py
 修改    app/core/parsers/deepseek_parser.py
 修改    app/update/preserve.py
-修改    app/api/system.py
+移动    app/api/system.py  → app/api/system/（包，四分组 + common + runtime）
 修改    app/api/chat.py（拆出 Responses 转换层与流式辅助）
 修改    app/api/tab_routes.py（拆出面板端点、流式辅助与四个路由分组；现为 316 行聚合层）
 修改    tests/fixtures/broad_except_ratchet.json

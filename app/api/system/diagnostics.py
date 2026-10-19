@@ -1,507 +1,79 @@
-"""
-app/api/system.py - 系统功能 API
+"""``app/api/system`` 的 diagnostics 分组（原 app/api/system.py 的一部分）。"""
 
-职责：
-- 健康检查
-- 日志管理
-- 环境配置
-- 浏览器常量
-- 调试接口
-"""
-
-import json
 import os
 import re
-import tempfile
 import time
 import asyncio
 import threading as _threading
 from pathlib import Path
 from typing import Optional, Any, Dict, List
-
-from app import __version__ as APP_VERSION
-from fastapi import APIRouter, Request, HTTPException, Depends
-from fastapi.responses import JSONResponse
-
-from app.core.config import (
-    AppConfig,
-    _replace_file_with_retry,
-    atomic_write_json,
-    get_logger,
-    log_collector,
-)
-from app.core import get_browser, BrowserConnectionError
+from fastapi import Request, HTTPException, Depends
+from app.core.config import AppConfig
+from app.core import BrowserConnectionError
 from app.api.deps import verify_dashboard_auth as verify_auth
-from app.api.deps import verify_sensitive_admin_auth
-from app.core.http_security import redact_env_for_backup, startup_security_errors
-from app.services.config_engine import config_engine, ConfigConstants
-from app.services.command_engine import command_engine
-from app.services.extractor_manager import extractor_manager
-from app.services.request_manager import request_manager
 from app.utils.site_url import extract_remote_site_domain, route_domain_matches
-from app.paths import CONFIG_DIR
-from app.update.preserve import load_update_preserve_settings, save_update_preserve_settings
 from app.core.driver import as_element, driver_for_tab
+import os as _os
+import psutil as _psutil
+from app.api.system import runtime
+from app.api.system.common import (
+    _load_env_config_from_file,
+    _read_json_object_or_400,
+    logger,
+    router,
+)
 
-logger = get_logger("API.SYSTEM")
+_PROJECT_PROCESS_CACHE: Dict[int, _psutil.Process] = {}
 
-router = APIRouter()
+_PROJECT_PROCESS_CACHE_LOCK = _threading.Lock()
 
+_PROJECT_PROCESS_SNAPSHOT_TTL_SECONDS = 5.0
 
-async def _read_json_object_or_400(request: Request) -> Dict[str, Any]:
-    """读取 JSON 请求体，并要求顶层必须是对象。"""
-    try:
-        data = await request.json()
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="请求体必须是有效 JSON")
-    except ValueError:
-        raise HTTPException(status_code=400, detail="请求体必须是有效 JSON")
-    if not isinstance(data, dict):
-        raise HTTPException(status_code=400, detail="请求体必须是 JSON 对象")
-    return data
-
-
-# 修复：仅对数值语义的键做数字推断。此前对所有值 isdigit() 转 int，
-# 会把 AUTH_TOKEN=00123456 这类字符串令牌静默改写成 123456；
-# 同理 CURRENT_VERSION=1.10 会被转成 float 1.1 后回写成 1.1。
-_NUMERIC_ENV_KEYS = {
-    "APP_PORT", "BROWSER_PORT", "MAX_HTML_CHARS", "CANVAS_IMAGE_MAX_SIZE",
-    "TOOL_CALLING_INTERNAL_RETRY_MAX", "TOOL_CALLING_MAX_TOOL_RESULT_CHARS",
-    "TAB_RECOVERY_MAX_ATTEMPTS", "TAB_RECOVERY_TIMEOUT_SEC",
-    "TAB_RECOVERY_WORKER_EXIT_WAIT_SEC",
-    "REQUEST_ZOMBIE_TTL", "LOG_MAX_BYTES", "LOG_BACKUP_COUNT",
-    "MAX_TABS", "MIN_TABS",
-    "CMD_ASYNC_MAX_WORKERS", "CMD_PAGE_CHECK_FAILURE_BACKOFF_SEC",
-    "CMD_PAGE_CHECK_JS_TIMEOUT_SEC", "CMD_PERIODIC_KEEPALIVE_INTERVAL_SEC",
-    "CMD_REQUEST_PRIORITY_BASELINE", "CMD_TAB_POOL_REFRESH_INTERVAL_SEC",
-    "TEMP_CLEANUP_MIN_AGE_SECONDS", "PASTE_TEMP_CLEANUP_MIN_AGE_SECONDS",
-    "ARENA_EVENT_BRIDGE_COMMAND_TEXT_LIMIT", "ARENA_EVENT_BRIDGE_DEDUPE_MAX_ENTRIES",
-    "SCHEDULED_RESTART_INTERVAL_SECONDS", "SCHEDULED_RESTART_DRAIN_TIMEOUT_SECONDS",
+_PROJECT_PROCESS_SNAPSHOT_CACHE = {
+    "expires_at": 0.0,
+    "snapshot": None,
 }
 
-
-def _load_env_config_from_file() -> Dict[str, Any]:
-    """读取 .env 文件配置。"""
-    env_path = Path(".env")
-    config: Dict[str, Any] = {}
-
-    if not env_path.exists():
-        return config
-
-    with open(env_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-
-            key, value = line.split("=", 1)
-            key = key.strip()
-            value = value.strip()
-
-            if value.lower() == "true":
-                value = True
-            elif value.lower() == "false":
-                value = False
-            elif key in _NUMERIC_ENV_KEYS and value.isdigit():
-                value = int(value)
-            elif key in _NUMERIC_ENV_KEYS and re.match(r"^\d+\.\d+$", value):
-                value = float(value)
-
-            config[key] = value
-
-    # 修复：不再凭空合成 DASHBOARD_AUTH_* —— 前端会把合成值原样回写，
-    # 把「留空即沿用 AUTH_*」的动态回退语义固化成硬编码副本。
-    # 生效值改由 GET /api/settings/env 的只读 effective 字段返回。
-
-    return config
-
-
-def _serialize_env_value(value: Any) -> str:
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (int, float)):
-        return str(value)
-    if value is None:
-        return ""
-    return str(value)
-
-
-def _write_text_file_atomic(path: Path, lines: list[str]) -> None:
-    """原子写入文本文件，避免写入中断时截断原文件。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd = None
-    tmp_path: Optional[Path] = None
-
-    try:
-        fd, tmp_name = tempfile.mkstemp(
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            dir=str(path.parent),
-        )
-        tmp_path = Path(tmp_name)
-        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
-            fd = None
-            f.writelines(lines)
-            f.flush()
-            os.fsync(f.fileno())
-        _replace_file_with_retry(tmp_path, path)
-    except Exception:
-        if fd is not None:
-            try:
-                os.close(fd)
-            except Exception:
-                pass
-        if tmp_path is not None:
-            try:
-                tmp_path.unlink(missing_ok=True)
-            except Exception:
-                pass
-        raise
-
-
-def _write_env_config_file(new_config: Dict[str, Any]) -> None:
-    """写入 .env 文件，尽量保留注释和现有顺序。"""
-    env_path = Path(".env")
-    lines = []
-
-    if env_path.exists():
-        with open(env_path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-
-    new_lines = []
-    existing_keys = set()
-
-    for line in lines:
-        stripped = line.strip()
-
-        if not stripped or stripped.startswith("#"):
-            new_lines.append(line)
-            continue
-
-        if "=" in stripped:
-            key = stripped.split("=", 1)[0].strip()
-            existing_keys.add(key)
-
-            if key in new_config:
-                value = _serialize_env_value(new_config[key])
-                new_lines.append(f"{key}={value}\n")
-            else:
-                new_lines.append(line)
-        else:
-            new_lines.append(line)
-
-    missing_items = []
-    for key, value in (new_config or {}).items():
-        if key in existing_keys:
-            continue
-
-        serialized = _serialize_env_value(value)
-        if serialized == "":
-            continue
-
-        missing_items.append((key, serialized))
-
-    if missing_items:
-        if new_lines and not new_lines[-1].endswith("\n"):
-            new_lines[-1] = new_lines[-1] + "\n"
-        if new_lines and new_lines[-1].strip():
-            new_lines.append("\n")
-
-        for key, value in missing_items:
-            new_lines.append(f"{key}={value}\n")
-
-    _write_text_file_atomic(env_path, new_lines)
-
-
-def _read_json_file(path: Path, default: Any) -> Any:
-    if not path.exists():
-        return default
-    with open(path, "r", encoding="utf-8-sig") as f:
-        return json.load(f)
-
-
-def _write_json_file(path: Path, payload: Any) -> None:
-    atomic_write_json(path, payload)
-
-
-def _snapshot_file(path: Path) -> Optional[bytes]:
-    if not path.exists():
-        return None
-    return path.read_bytes()
-
-
-def _restore_file_snapshot(path: Path, snapshot: Optional[bytes]) -> None:
-    if snapshot is None:
-        try:
-            path.unlink(missing_ok=True)
-        except FileNotFoundError:
-            pass
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd = None
-    tmp_path: Optional[Path] = None
-    try:
-        fd, tmp_name = tempfile.mkstemp(
-            prefix=f".{path.name}.rollback.",
-            suffix=".tmp",
-            dir=str(path.parent),
-        )
-        tmp_path = Path(tmp_name)
-        with os.fdopen(fd, "wb") as handle:
-            fd = None
-            handle.write(snapshot)
-            handle.flush()
-            os.fsync(handle.fileno())
-        _replace_file_with_retry(tmp_path, path)
-    finally:
-        if fd is not None:
-            try:
-                os.close(fd)
-            except Exception:
-                pass
-        if tmp_path is not None:
-            try:
-                tmp_path.unlink(missing_ok=True)
-            except Exception:
-                pass
-
-
-def _restore_file_snapshots(snapshots: Dict[Path, Optional[bytes]]) -> None:
-    for path, snapshot in reversed(list(snapshots.items())):
-        try:
-            _restore_file_snapshot(path, snapshot)
-        except Exception as rollback_error:
-            logger.error(f"回滚配置文件失败: {path}: {rollback_error}")
-
-
-def _schedule_service_restart(delay_seconds: float = 1.0) -> None:
-    async def trigger_restart():
-        await asyncio.sleep(max(0.1, float(delay_seconds or 1.0)))
-        logger.warning("=" * 60)
-        logger.warning("配置已更新，服务即将重启...")
-        logger.warning("=" * 60)
-
-        from app.runtime.relaunch import restart_service
-        restart_service()
-
-    asyncio.create_task(trigger_restart())
-
-
-def _export_sites_config() -> Dict[str, Any]:
-    """R1-2：从 config/sites/ 目录拼出与旧 sites.json 相同结构的字典（备份格式保持不变，旧备份仍可导入）。"""
-    from app.services.config.site_store import load_sites_dict
-
-    return load_sites_dict(config_engine.sites_dir)
-
-
-def _build_settings_backup_bundle() -> Dict[str, Any]:
-    sites_local_file = Path(config_engine.local_sites_file)
-    commands_file = Path(ConfigConstants.COMMANDS_FILE)
-    commands_local_file = Path(ConfigConstants.COMMANDS_LOCAL_FILE)
-    browser_config_file = Path("config/browser_config.json")
-    extractors_file = Path(extractor_manager.CONFIG_FILE)
-
-    # S13：备份文件会被下载、转存、分享，默认绝不包含 .env 中的令牌/密钥/含凭据的代理地址。
-    # 被剔除的键只记录名字，导入时这些键保持目标机器现值不变。
-    safe_env, redacted_env_keys = redact_env_for_backup(_load_env_config_from_file())
-
-    return {
-        "bundle_version": 1,
-        "secrets_redacted": True,
-        "redacted_env_keys": redacted_env_keys,
-        "exported_at": int(time.time()),
-        "app_version": APP_VERSION,
-        "files": {
-            "sites": _export_sites_config(),
-            "sites_local": _read_json_file(sites_local_file, {"default_presets": {}}),
-            "commands": _read_json_file(commands_file, {"commands": []}),
-            "commands_local": _read_json_file(commands_local_file, {"commands": []}),
-            "browser_constants": _read_json_file(browser_config_file, {}),
-            "extractors": _read_json_file(extractors_file, extractor_manager.export_config()),
-            "update_preserve": load_update_preserve_settings(),
-            "env": safe_env,
-        },
-    }
-
-
-_REDACTED_PLACEHOLDERS = {"***", "******", "<redacted>", "[redacted]", "__redacted__", "redacted"}
-
-
-def _strip_redacted_env_import(env_payload: Dict[str, Any]) -> Dict[str, Any]:
-    """导入备份时丢弃脱敏占位符，避免把 "***" 之类写回 .env 覆盖真实令牌。"""
-    cleaned: Dict[str, Any] = {}
-    for key, value in env_payload.items():
-        if isinstance(value, str) and value.strip().lower() in _REDACTED_PLACEHOLDERS:
-            continue
-        cleaned[key] = value
-    return cleaned
-
-
-def _validate_settings_backup_files(files: Dict[str, Any]) -> Dict[str, Any]:
-    """Validate all import sections before any target file is modified."""
-    validated: Dict[str, Any] = {}
-
-    if "sites" in files:
-        if not isinstance(files["sites"], dict):
-            raise HTTPException(status_code=400, detail="sites 配置格式无效")
-        validated["sites"] = files["sites"]
-
-    if "sites_local" in files:
-        if not isinstance(files["sites_local"], dict):
-            raise HTTPException(status_code=400, detail="sites_local 配置格式无效")
-        validated["sites_local"] = files["sites_local"]
-
-    if "commands" in files:
-        commands_payload = files["commands"]
-        if not isinstance(commands_payload, (dict, list)):
-            raise HTTPException(status_code=400, detail="commands 配置格式无效")
-        validated["commands"] = commands_payload
-
-    if "commands_local" in files:
-        commands_local_payload = files["commands_local"]
-        if not isinstance(commands_local_payload, dict):
-            raise HTTPException(status_code=400, detail="commands_local 配置格式无效")
-        validated["commands_local"] = commands_local_payload
-
-    if "browser_constants" in files:
-        if not isinstance(files["browser_constants"], dict):
-            raise HTTPException(status_code=400, detail="browser_constants 配置格式无效")
-        validated["browser_constants"] = files["browser_constants"]
-
-    if "extractors" in files:
-        extractors_payload = files["extractors"]
-        if not isinstance(extractors_payload, dict):
-            raise HTTPException(status_code=400, detail="extractors 配置格式无效")
-        if "extractors" not in extractors_payload:
-            raise HTTPException(status_code=400, detail="extractors 配置格式无效：缺少 extractors 字段")
-        extractors_config = extractors_payload.get("extractors")
-        if not isinstance(extractors_config, dict):
-            raise HTTPException(status_code=400, detail="extractors 配置格式无效：extractors 必须是对象")
-        invalid_entries = [
-            extractor_id
-            for extractor_id, extractor_config in extractors_config.items()
-            if not isinstance(extractor_config, dict)
-        ]
-        if invalid_entries:
-            raise HTTPException(
-                status_code=400,
-                detail="extractors 配置格式无效：提取器配置项必须是对象",
-            )
-        validated["extractors"] = extractors_payload
-
-    if "update_preserve" in files:
-        preserve_payload = files["update_preserve"]
-        if isinstance(preserve_payload, dict):
-            selected_patterns = preserve_payload.get("selected_patterns", [])
-        else:
-            selected_patterns = preserve_payload
-        if selected_patterns is None:
-            selected_patterns = []
-        if not isinstance(selected_patterns, list):
-            raise HTTPException(status_code=400, detail="update_preserve 配置格式无效")
-        validated["update_preserve"] = selected_patterns
-
-    if "env" in files:
-        if not isinstance(files["env"], dict):
-            raise HTTPException(status_code=400, detail="env 配置格式无效")
-        env_payload = _strip_redacted_env_import(files["env"])
-        # 与 POST /api/settings/env 同一套校验：拦截换行注入、非法键名、认证自锁/公开无认证
-        _validate_env_config_payload(env_payload)
-        validated["env"] = env_payload
-
-    return validated
-
-
-DEFAULT_BROWSER_CONSTANTS: Dict[str, Any] = {
-    "CONNECTION_TIMEOUT": 10,
-    "MAX_REQUEST_EXECUTE_TIME_SEC": 300.0,
-    "STEALTH_DELAY_MIN": 0.03,
-    "STEALTH_DELAY_MAX": 0.1,
-    "ACTION_DELAY_MIN": 0.06,
-    "ACTION_DELAY_MAX": 0.14,
-    "STEALTH_PAUSE_PROBABILITY": 0.0,
-    "STEALTH_PAUSE_EXTRA_MAX": 0.15,
-    "STEALTH_KEY_DOWN_UP_MIN": 0.015,
-    "STEALTH_KEY_DOWN_UP_MAX": 0.04,
-    "STEALTH_KEY_BETWEEN_MIN": 0.02,
-    "STEALTH_KEY_BETWEEN_MAX": 0.06,
-    "STEALTH_PASTE_SETTLE_MIN": 0.12,
-    "STEALTH_PASTE_SETTLE_MAX": 0.25,
-    "STEALTH_SKIP_PASTE_VERIFY": True,
-    "STEALTH_SEND_IMAGE_WAIT": 8.0,
-    "STEALTH_SEND_IMAGE_RETRY_INTERVAL": 1.2,
-    "STEALTH_MOUSE_WARMUP_ENABLED": False,
-    "STEALTH_CLICK_STRATEGY": "auto",
-    "STEALTH_DOM_CLICK_TARGETS": ["new_chat_btn", "input_box", "send_btn"],
-    "DEFAULT_ELEMENT_TIMEOUT": 3,
-    "FALLBACK_ELEMENT_TIMEOUT": 1,
-    "ELEMENT_CACHE_MAX_AGE": 5.0,
-    "LOG_INFO_CUTE_MODE": False,
-    "LOG_DEBUG_CUTE_MODE": False,
-    "LOG_CONSOLE_ENABLED": True,
-    "LOG_FILE_ENABLED": True,
-    "LOG_WEB_COLLECTOR_ENABLED": True,
-    "LOG_WEB_MAX_RECORDS": 500,
-    "STREAM_CHECK_INTERVAL_MIN": 0.1,
-    "STREAM_CHECK_INTERVAL_MAX": 1.0,
-    "STREAM_CHECK_INTERVAL_DEFAULT": 0.3,
-    "STREAM_SILENCE_THRESHOLD": 8.0,
-    "STREAM_MAX_TIMEOUT": 600,
-    "STREAM_INITIAL_WAIT": 180,
-    "STREAM_CONTENT_SHRINK_TOLERANCE": 3,
-    "STREAM_STABLE_COUNT_THRESHOLD": 8,
-    "STREAM_SILENCE_THRESHOLD_FALLBACK": 12,
-    "MAX_MESSAGE_LENGTH": 100000,
-    "MAX_MESSAGES_COUNT": 100,
-    "TEXT_INPUT_CHUNK_SIZE": 30000,
-    "GLOBAL_NETWORK_INTERCEPTION_ENABLED": False,
-    "GLOBAL_NETWORK_INTERCEPTION_LISTEN_PATTERN": "http",
-    "GLOBAL_NETWORK_INTERCEPTION_WAIT_TIMEOUT": 0.5,
-    "GLOBAL_NETWORK_INTERCEPTION_RETRY_DELAY": 1.0,
-    "GLOBAL_NETWORK_INTERCEPTION_RES_TYPES": "XHR,Fetch,EventSource,Document",
-    "NETWORK_DEBUG_CAPTURE_ENABLED": False,
-    "NETWORK_DEBUG_CAPTURE_MAX_BODY_CHARS": 50000,
-    "NETWORK_DEBUG_CAPTURE_MAX_FILES_PER_REQUEST": 3,
-    "NETWORK_DEBUG_CAPTURE_PARSER_FILTER": "",
-    "NETWORK_DEBUG_CAPTURE_MAX_TOTAL_MB": 50,
-    "NETWORK_DEBUG_CAPTURE_RETENTION_HOURS": 24,
-    "CONVERSATION_TIMEOUT_THRESHOLD": 0.0,
-    "FORCE_NEW_CONVERSATION": False,
-    "REQUEST_MONITOR_ENABLED": True,
-    "REQUEST_MONITOR_MAX_RECORDS": 200,
-    "REQUEST_MONITOR_DETAIL_ENABLED": True,
-    "REQUEST_MONITOR_SAVE_TO_FILE": True,
-    "REQUEST_MONITOR_MAX_CAPTURED_RESPONSE_CHARS": 30000,
-    # 修复：补齐缺失的入口，否则前端无法通过 /api/settings/browser-constants 配置它们
-    "REQUEST_ZOMBIE_TTL": 600,
-    "PAGE_INTERACTION_THROTTLE_ENABLED": True,
-    "PAGE_INTERACTION_MAX_CONCURRENT": 3,
-    "PAGE_INTERACTION_MAX_WAIT": 20.0,
-    "DASHBOARD_LOG_POLL_INTERVAL_MS": 1000,
-    "DASHBOARD_LOG_BACKGROUND_POLL_INTERVAL_MS": 5000,
-    "DASHBOARD_REQUEST_HISTORY_POLL_INTERVAL_MS": 3000,
-    "DASHBOARD_SYSTEM_STATS_ENABLED": True,
-    "DASHBOARD_SYSTEM_STATS_POLL_INTERVAL_MS": 3000,
-    "COMMAND_PERIODIC_CHECK_ENABLED": True,
-    "COMMAND_PERIODIC_CHECK_INTERVAL_SEC": 8.0,
-    "COMMAND_PERIODIC_CHECK_JITTER_SEC": 2.0,
-    "UPLOAD_HISTORY_IMAGES": False,
-    "tab_pool": {
-        "max_tabs": 5,
-        "min_tabs": 1,
-        "idle_timeout": 300,
-        "acquire_timeout": 60,
-        "stuck_timeout": 180,
-        "allocation_mode": "first_idle",
-        "excluded_urls": [],
-        "preserve_error_tabs": False,
-        "route_groups": [],
+_PROJECT_PROCESS_SNAPSHOT_CACHE_LOCK = _threading.Lock()
+
+_PROJECT_MEMORY_CACHE_TTL_SECONDS = 10.0
+
+_PROJECT_MEMORY_CACHE = {
+    "expires_at": 0.0,
+    "memory_mb": 0.0,
+}
+
+_PROJECT_MEMORY_CACHE_LOCK = _threading.Lock()
+
+_SYSTEM_STATS_CACHE = {
+    "expires_at": 0.0,
+    "payload": {
+        "memory_mb": 0.0,
+        "disk_status": "0 MB",
+        "total_requests": 0,
+        "total_input_tokens": 0,
+        "total_output_tokens": 0,
+        "cpu_percent": 0.0,
+        "project_cpu": 0.0,
+        "memory_percent": 0.0,
+        "project_memory_percent": 0.0,
+        # 与实际构建的 payload 保持同一形状，避免消费方缺键
+        "running_count": 0,
+        "queued_count": 0,
     },
 }
 
+_SYSTEM_STATS_CACHE_LOCK = _threading.Lock()
 
-_DYNAMIC_SELECTOR_CLASS_RE = re.compile(r"^(?:_?[A-Fa-f0-9_-]{8,}|[A-Za-z0-9_-]{16,})$")
+_DISK_USAGE_CACHE = {
+    "expires_at": 0.0,
+    "value": 0.0,
+    "last_success_value": 0.0,
+}
+
+_DISK_USAGE_REFRESH_LOCK = _threading.Lock()
+
+_DISK_USAGE_REFRESH_WORKER: Optional[_threading.Thread] = None
 
 
 def _build_selector_test_diagnosis(
@@ -811,488 +383,6 @@ def _build_selector_top_candidates(elements: list[Dict[str, Any]]) -> list[Dict[
     return ranked[:10]
 
 
-# ================= 健康检查 =================
-
-def _public_health_response() -> JSONResponse:
-    """S7：匿名远程调用者的最小健康响应。
-
-    不调用 ``browser.health_check()``（它会主动连接/重连浏览器），只读当前连接标志；
-    保留控制面板登录前需要的 ``dashboard_auth_enabled``，以及原有 200/503 语义。
-    """
-    try:
-        browser = get_browser(auto_connect=False)
-        connected = bool(getattr(browser, "_connected", False)) and bool(
-            getattr(browser, "browser_handle", None) is not None
-        )
-    except Exception:
-        connected = False
-    dashboard_auth = AppConfig.is_dashboard_auth_enabled()
-    response = {
-        "service": "healthy",
-        "browser": {"connected": connected},
-        "config": {
-            "auth_enabled": dashboard_auth,
-            "dashboard_auth_enabled": dashboard_auth,
-        },
-        "detail": "restricted",
-        "timestamp": int(time.time()),
-    }
-    return JSONResponse(content=response, status_code=200 if connected else 503)
-
-
-@router.get("/health")
-async def health_check(request: Request):
-    """服务健康检查（本机直连或带有效令牌时返回详细诊断，否则最小响应）"""
-    from app.utils.diagnostics_access import request_is_privileged
-
-    if not request_is_privileged(request):
-        return _public_health_response()
-
-    try:
-        browser = get_browser(auto_connect=False)
-        browser_health = browser.health_check()
-    except Exception as e:
-        browser_health = {"connected": False, "error": str(e)}
-
-    rm_status = request_manager.get_status()
-
-    response = {
-        "service": "healthy",
-        "version": APP_VERSION,
-        "browser": browser_health,
-        "request_manager": rm_status,
-        "config": {
-            "sites_loaded": len(config_engine.sites),
-            "auth_enabled": AppConfig.is_dashboard_auth_enabled(),
-            "dashboard_auth_enabled": AppConfig.is_dashboard_auth_enabled(),
-            "service_auth_enabled": AppConfig.is_auth_enabled(),
-        },
-        "timestamp": int(time.time())
-    }
-
-    status_code = 200 if browser_health.get("connected") else 503
-    return JSONResponse(content=response, status_code=status_code)
-
-
-# ================= 日志 API =================
-
-@router.get("/api/logs")
-async def get_logs(
-    since: float = 0,
-    after_seq: int = 0,
-    authenticated: bool = Depends(verify_auth),
-):
-    """获取日志"""
-    logs, next_seq, cleared = log_collector.get_recent(since=since, after_seq=after_seq)
-    return {"logs": logs, "timestamp": time.time(), "next_seq": next_seq, "cleared": cleared}
-
-
-@router.delete("/api/logs")
-async def clear_logs(authenticated: bool = Depends(verify_auth)):
-    """清除日志"""
-    log_collector.clear()
-    return {"status": "success"}
-
-
-# ================= 环境配置 API =================
-
-@router.get("/api/settings/env")
-async def get_env_config(authenticated: bool = Depends(verify_auth)):
-    """读取 .env 文件配置"""
-    try:
-        # 修复：config 结构保持不变（前端只读 data.config）；
-        # 另附只读 effective 字段暴露 DASHBOARD_AUTH_* 的实际生效值，前端不会回写它。
-        return {
-            "config": _load_env_config_from_file(),
-            "effective": {
-                "DASHBOARD_AUTH_ENABLED": AppConfig.is_dashboard_auth_enabled(),
-                "DASHBOARD_AUTH_TOKEN_SET": bool(AppConfig.get_dashboard_auth_token()),
-            },
-        }
-    except Exception as e:
-        logger.error(f"读取环境配置失败: {e}")
-        raise HTTPException(status_code=500, detail=f"读取失败: {str(e)}")
-
-
-def _env_value_is_true(value: Any) -> bool:
-    """与后端 AppConfig._env_bool 一致的真值白名单语义。"""
-    if isinstance(value, bool):
-        return value
-    if value is None:
-        return False
-    return str(value).strip().lower() in ("true", "1", "yes", "on")
-
-
-def _validate_env_config_payload(new_config: Dict[str, Any]) -> None:
-    """写入 .env 前校验：拦截非法键名、换行注入，以及会把控制面板锁死的认证组合。"""
-    # 修复：键名/值零校验时，值里带 \n 就能往 .env 注入额外行
-    # （例如注入 DASHBOARD_AUTH_ENABLED=false 关掉认证）。
-    #
-    # 注意：前端会把 GET 读到的整份 .env 原样回传，其中可能包含 http_proxy、no_proxy
-    # 这类小写的存量键。对这些"读进来又原样送回来、值也没变"的键做键名校验会让用户
-    # 完全无法保存任何设置，因此键名规则只对新增/变更的键生效。
-    try:
-        existing_env: Dict[str, Any] = _load_env_config_from_file()
-    except Exception:
-        existing_env = {}
-
-    changed_keys: list = []
-    for key, value in new_config.items():
-        serialized = _serialize_env_value(value)
-        if "\r" in serialized or "\n" in serialized:
-            raise HTTPException(status_code=400, detail=f"配置值不能包含换行: {key}")
-        unchanged_existing = (
-            key in existing_env
-            and _serialize_env_value(existing_env.get(key)) == serialized
-        )
-        if unchanged_existing:
-            continue
-        if not isinstance(key, str) or not re.match(r"^[A-Z][A-Z0-9_]*$", key):
-            raise HTTPException(status_code=400, detail=f"非法的配置键名: {key}")
-        changed_keys.append(key)
-
-    # R2-4：按环境变量登记表校验类型、范围与枚举取值（只校验新增/修改的键，存量值原样放行）
-    from app.core.settings_registry import validate_env_values
-
-    value_errors = validate_env_values(
-        {key: _serialize_env_value(new_config[key]) for key in changed_keys}
-    )
-    if value_errors:
-        raise HTTPException(status_code=400, detail="配置值不合法：" + "；".join(value_errors.values()))
-
-    # 修复：认证自锁保护。开启认证却留空令牌时，deps.py 会对每个 /api/* 抛 500，
-    # 控制面板此后打不开，只能手改 .env 恢复。按合并后的最终生效值判断。
-    merged: Dict[str, Any] = {**existing_env, **new_config}
-
-    auth_enabled = _env_value_is_true(merged.get("AUTH_ENABLED"))
-    auth_token = str(merged.get("AUTH_TOKEN") or "").strip()
-    if auth_enabled and not auth_token:
-        raise HTTPException(status_code=400, detail="启用 API 认证时必须设置 AUTH_TOKEN")
-
-    # DASHBOARD_AUTH_ENABLED 未设置/为空时沿用 AUTH_ENABLED
-    dashboard_raw = merged.get("DASHBOARD_AUTH_ENABLED")
-    if dashboard_raw is None or (not isinstance(dashboard_raw, bool) and str(dashboard_raw).strip() == ""):
-        dashboard_enabled = auth_enabled
-    else:
-        dashboard_enabled = _env_value_is_true(dashboard_raw)
-
-    dashboard_token = str(merged.get("DASHBOARD_AUTH_TOKEN") or "").strip()
-    if dashboard_enabled and not dashboard_token and not auth_token:
-        raise HTTPException(
-            status_code=400,
-            detail="启用控制面板认证时必须设置 DASHBOARD_AUTH_TOKEN 或 AUTH_TOKEN"
-        )
-
-    # H1 / S1：认证开关必须是合法布尔值；公开监听必须同时启用认证。
-    # 与启动期检查 startup_security_errors 同一套规则，避免保存后服务起不来。
-    merged_env = {str(k): _serialize_env_value(v) for k, v in merged.items()}
-    security_errors = startup_security_errors(env=merged_env)
-    if security_errors:
-        raise HTTPException(status_code=400, detail="；".join(security_errors))
-
-
-@router.post("/api/settings/env")
-async def save_env_config(
-    request: Request,
-    authenticated: bool = Depends(verify_auth)
-):
-    """保存 .env 配置"""
-    try:
-        data = await _read_json_object_or_400(request)
-        new_config = data.get("config", {})
-        if not isinstance(new_config, dict):
-            raise HTTPException(status_code=400, detail="环境配置必须是 JSON 对象")
-        _validate_env_config_payload(new_config)
-        _write_env_config_file(new_config)
-
-        logger.info(f"环境配置已保存: {len(new_config)} 项，准备触发重启...")
-        _schedule_service_restart(1.0)
-
-        return {
-            "status": "success",
-            "message": "环境配置已保存，服务将在 1 秒后重启...",
-            "updated_count": len(new_config),
-            "will_restart": True
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"保存环境配置失败: {e}")
-        raise HTTPException(status_code=500, detail=f"保存失败: {str(e)}")
-
-
-@router.get("/api/settings/backup")
-async def export_settings_backup(authenticated: bool = Depends(verify_sensitive_admin_auth)):
-    """导出完整配置备份。"""
-    try:
-        return _build_settings_backup_bundle()
-    except Exception as e:
-        logger.error(f"导出配置备份失败: {e}")
-        raise HTTPException(status_code=500, detail=f"导出失败: {str(e)}")
-
-
-@router.post("/api/settings/backup")
-async def import_settings_backup(
-    request: Request,
-    authenticated: bool = Depends(verify_sensitive_admin_auth)
-):
-    """导入完整配置备份。"""
-    try:
-        data = await _read_json_object_or_400(request)
-        allowed_sections = {
-            "sites",
-            "sites_local",
-            "commands",
-            "commands_local",
-            "browser_constants",
-            "extractors",
-            "update_preserve",
-            "env",
-        }
-
-        raw_files = data.get("files") if isinstance(data, dict) else None
-        if isinstance(raw_files, dict):
-            files = {key: value for key, value in raw_files.items() if key in allowed_sections}
-        elif isinstance(data, dict):
-            files = {key: value for key, value in data.items() if key in allowed_sections}
-        else:
-            files = {}
-
-        if not files:
-            raise HTTPException(status_code=400, detail="备份文件格式无效")
-
-        files = _validate_settings_backup_files(files)
-        imported_sections = []
-        restart_required = False
-        file_snapshots: Dict[Path, Optional[bytes]] = {}
-
-        def remember_file(path: Path) -> Path:
-            target = Path(path)
-            if target not in file_snapshots:
-                file_snapshots[target] = _snapshot_file(target)
-            return target
-
-        def write_import_json(path: Path, payload: Any) -> None:
-            _write_json_file(remember_file(path), payload)
-
-        def write_import_env(payload: Dict[str, Any]) -> None:
-            remember_file(Path(".env"))
-            _write_env_config_file(payload)
-
-        def reload_imported_runtime() -> None:
-            if "sites" in files or "sites_local" in files:
-                config_engine.reload_config()
-
-            if "commands" in files or "commands_local" in files:
-                command_engine._refresh_commands_if_changed(force=True)
-
-            if "browser_constants" in files:
-                try:
-                    from app.core.config import BrowserConstants
-                    if hasattr(BrowserConstants, "reload"):
-                        BrowserConstants.reload()
-                except Exception as reload_error:
-                    logger.warning(f"导入后热重载浏览器常量失败: {reload_error}")
-
-            if "extractors" in files:
-                extractor_manager.reload_config()
-
-        try:
-            if "sites" in files:
-                # R1-2：备份里的 sites 是旧 sites.json 结构；按“整体替换”语义写回 config/sites/ 目录。
-                # 先记住目录里现有的和即将写入的每个文件，失败时由 _restore_file_snapshots 整体回滚。
-                store = config_engine.site_store
-                sites_to_save = dict(files["sites"])
-                if "_global" not in sites_to_save:
-                    sites_to_save["_global"] = config_engine.global_config.to_dict()
-                for site_path in store.site_files():
-                    remember_file(site_path)
-                for site_key in sites_to_save:
-                    remember_file(store.file_for(str(site_key)))
-                with config_engine._io_lock:
-                    store.save(sites_to_save)
-                imported_sections.append("sites")
-
-            if "sites_local" in files:
-                write_import_json(Path(config_engine.local_sites_file), files["sites_local"])
-                imported_sections.append("sites_local")
-
-            if "commands" in files:
-                write_import_json(Path(ConfigConstants.COMMANDS_FILE), files["commands"])
-                imported_sections.append("commands")
-
-            if "commands_local" in files:
-                write_import_json(Path(ConfigConstants.COMMANDS_LOCAL_FILE), files["commands_local"])
-                imported_sections.append("commands_local")
-
-            if "browser_constants" in files:
-                write_import_json(Path("config/browser_config.json"), files["browser_constants"])
-                imported_sections.append("browser_constants")
-
-            if "extractors" in files:
-                write_import_json(Path(extractor_manager.CONFIG_FILE), files["extractors"])
-                imported_sections.append("extractors")
-
-            if "update_preserve" in files:
-                remember_file(Path(CONFIG_DIR) / "update_settings.json")
-                save_update_preserve_settings(files["update_preserve"])
-                imported_sections.append("update_preserve")
-
-            if "env" in files:
-                write_import_env(files["env"])
-                imported_sections.append("env")
-                restart_required = True
-        except Exception:
-            _restore_file_snapshots(file_snapshots)
-            raise
-
-        try:
-            reload_imported_runtime()
-        except Exception:
-            _restore_file_snapshots(file_snapshots)
-            try:
-                reload_imported_runtime()
-            except Exception as rollback_reload_error:
-                logger.warning(f"导入失败回滚后热重载运行时状态失败: {rollback_reload_error}")
-            raise
-
-        logger.info(f"完整配置备份已导入: {', '.join(imported_sections)}")
-
-        if restart_required:
-            _schedule_service_restart(1.0)
-
-        return {
-            "success": True,
-            "message": "完整配置备份已导入",
-            "imported_sections": imported_sections,
-            "will_restart": restart_required,
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"导入配置备份失败: {e}")
-        raise HTTPException(status_code=500, detail=f"导入失败: {str(e)}")
-
-
-@router.get("/api/settings/browser-constants")
-async def get_browser_constants(authenticated: bool = Depends(verify_auth)):
-    """读取浏览器常量配置"""
-    try:
-        config_path = Path("config/browser_config.json")
-        config = _read_json_file(config_path, DEFAULT_BROWSER_CONSTANTS)
-        return {"config": config}
-
-    except Exception as e:
-        logger.error(f"读取浏览器常量失败: {e}")
-        raise HTTPException(status_code=500, detail=f"读取失败: {str(e)}")
-
-
-@router.post("/api/settings/browser-constants")
-async def save_browser_constants(
-    request: Request,
-    authenticated: bool = Depends(verify_auth)
-):
-    """保存浏览器常量配置"""
-    try:
-        data = await _read_json_object_or_400(request)
-        config = data.get("config", {})
-        if not isinstance(config, dict):
-            raise HTTPException(status_code=400, detail="浏览器常量配置必须是 JSON 对象")
-        _write_json_file(Path("config/browser_config.json"), config)
-
-        try:
-            from app.core.config import BrowserConstants
-            if hasattr(BrowserConstants, 'reload'):
-                BrowserConstants.reload()
-                logger.info("浏览器常量已热重载")
-            else:
-                logger.warning("BrowserConstants 不支持热重载，需重启服务")
-        except Exception as reload_error:
-            logger.warning(f"热重载失败: {reload_error}")
-
-        tab_pool_synced = False
-        try:
-            tab_pool_config = config.get("tab_pool") or {}
-            if isinstance(tab_pool_config, dict):
-                import app.core.browser as browser_module
-
-                browser_instance = getattr(browser_module, "_browser_instance", None)
-                live_tab_pool = getattr(browser_instance, "_tab_pool", None) if browser_instance else None
-                if live_tab_pool is not None:
-                    live_tab_pool.apply_runtime_config(
-                        max_tabs=tab_pool_config.get("max_tabs"),
-                        min_tabs=tab_pool_config.get("min_tabs"),
-                        idle_timeout=tab_pool_config.get("idle_timeout"),
-                        acquire_timeout=tab_pool_config.get("acquire_timeout"),
-                        stuck_timeout=tab_pool_config.get("stuck_timeout"),
-                        allocation_mode=tab_pool_config.get("allocation_mode"),
-                        excluded_urls=tab_pool_config.get("excluded_urls"),
-                        preserve_error_tabs=tab_pool_config.get("preserve_error_tabs"),
-                        route_groups=tab_pool_config.get("route_groups"),
-                    )
-                    tab_pool_synced = True
-                    logger.info("运行中的标签页池配置已同步")
-        except Exception as sync_error:
-            logger.warning(f"同步标签页池运行时配置失败: {sync_error}")
-
-        logger.info(f"浏览器常量已保存: {len(config)} 项")
-
-        return {
-            "status": "success",
-            "message": "浏览器常量已保存",
-            "updated_count": len(config),
-            "tab_pool_synced": tab_pool_synced,
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"保存浏览器常量失败: {e}")
-        raise HTTPException(status_code=500, detail=f"保存失败: {str(e)}")
-
-
-@router.get("/api/settings/update-preserve")
-async def get_update_preserve_settings(authenticated: bool = Depends(verify_auth)):
-    """读取更新白名单配置。"""
-    try:
-        data = load_update_preserve_settings()
-        return {
-            "options": data.get("options", []),
-            "selected_patterns": data.get("selected_patterns", []),
-        }
-    except Exception as e:
-        logger.error(f"读取更新白名单失败: {e}")
-        raise HTTPException(status_code=500, detail=f"读取失败: {str(e)}")
-
-
-@router.post("/api/settings/update-preserve")
-async def save_update_preserve(
-    request: Request,
-    authenticated: bool = Depends(verify_auth)
-):
-    """保存更新白名单配置。"""
-    try:
-        data = await _read_json_object_or_400(request)
-        selected_patterns = data.get("selected_patterns", [])
-        if not isinstance(selected_patterns, list):
-            raise HTTPException(status_code=400, detail="更新白名单必须是数组")
-        result = save_update_preserve_settings(selected_patterns)
-        logger.info(f"更新白名单已保存: {len(result.get('selected_patterns', []))} 项")
-        return {
-            "status": "success",
-            "message": "更新白名单已保存，下次更新时生效",
-            "selected_patterns": result.get("selected_patterns", []),
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"保存更新白名单失败: {e}")
-        raise HTTPException(status_code=500, detail=f"保存失败: {str(e)}")
-
-
-# ================= 调试 API =================
-
 def _selector_test_tab_summary(session: Any, tab: Any) -> Dict[str, Any]:
     url = ""
     try:
@@ -1328,7 +418,7 @@ def _run_selector_test(
     route_domain: str = "",
 ) -> Dict[str, Any]:
     try:
-        browser = get_browser()
+        browser = runtime.get_browser()
         normalized_domain = str(route_domain or "").strip()
         if selector.startswith(('tag:', '@', 'xpath:', 'css:')) or '@@' in selector:
             query_selector = selector
@@ -1567,7 +657,7 @@ async def request_status(authenticated: bool = Depends(verify_auth)):
     """查看请求管理器状态"""
     if not AppConfig.DEBUG:
         raise HTTPException(status_code=403, detail="调试功能未启用")
-    return request_manager.get_status()
+    return runtime.request_manager.get_status()
 
 
 @router.post("/api/debug/force-release")
@@ -1576,13 +666,13 @@ async def force_release(authenticated: bool = Depends(verify_auth)):
     if not AppConfig.DEBUG:
         raise HTTPException(status_code=403, detail="调试功能未启用")
 
-    was_locked = request_manager.is_locked()
-    cancelled_requests = request_manager.force_release()
+    was_locked = runtime.request_manager.is_locked()
+    cancelled_requests = runtime.request_manager.force_release()
     released_tabs = 0
     release_error = ""
 
     try:
-        browser = get_browser(auto_connect=False)
+        browser = runtime.get_browser(auto_connect=False)
         pool = getattr(browser, "tab_pool", None)
         if pool is not None and hasattr(pool, "force_release_all"):
             released_tabs = int(pool.force_release_all() or 0)
@@ -1591,7 +681,7 @@ async def force_release(authenticated: bool = Depends(verify_auth)):
         logger.warning(f"调试强制释放标签页失败: {e}")
 
     released = bool(cancelled_requests or released_tabs)
-    is_now_locked = request_manager.is_locked()
+    is_now_locked = runtime.request_manager.is_locked()
 
     logger.warning(
         f"手动解锁: was={was_locked}, cancelled={cancelled_requests}, "
@@ -1619,7 +709,7 @@ async def cancel_current(
     if not AppConfig.DEBUG:
         raise HTTPException(status_code=403, detail="调试功能未启用")
 
-    running_requests = request_manager.get_running_requests(tab_id=tab_id)
+    running_requests = runtime.request_manager.get_running_requests(tab_id=tab_id)
     if not running_requests:
         return {"cancelled": False, "message": "没有正在执行的请求", "tab_id": tab_id}
 
@@ -1632,7 +722,7 @@ async def cancel_current(
     request_ids = [ctx.request_id for ctx in running_requests]
     success = False
     for request_id in request_ids:
-        success = request_manager.cancel_request(request_id, "manual_cancel") or success
+        success = runtime.request_manager.cancel_request(request_id, "manual_cancel") or success
 
     return {
         "cancelled": success,
@@ -1640,10 +730,6 @@ async def cancel_current(
         "request_ids": request_ids,
         "tab_id": tab_id or running_requests[0].tab_id,
     }
-
-import shutil
-import os as _os
-import psutil as _psutil
 
 
 def _panel_memory_metric() -> str:
@@ -1919,22 +1005,6 @@ def _get_project_memory_mb(process_snapshot: Optional[Dict[str, Any]] = None) ->
         return 0.0
 
 
-_PROJECT_PROCESS_CACHE: Dict[int, _psutil.Process] = {}
-_PROJECT_PROCESS_CACHE_LOCK = _threading.Lock()
-_PROJECT_PROCESS_SNAPSHOT_TTL_SECONDS = 5.0
-_PROJECT_PROCESS_SNAPSHOT_CACHE = {
-    "expires_at": 0.0,
-    "snapshot": None,
-}
-_PROJECT_PROCESS_SNAPSHOT_CACHE_LOCK = _threading.Lock()
-_PROJECT_MEMORY_CACHE_TTL_SECONDS = 10.0
-_PROJECT_MEMORY_CACHE = {
-    "expires_at": 0.0,
-    "memory_mb": 0.0,
-}
-_PROJECT_MEMORY_CACHE_LOCK = _threading.Lock()
-
-
 def _get_project_process_snapshot_cached(ttl_seconds: float = _PROJECT_PROCESS_SNAPSHOT_TTL_SECONDS) -> Dict[str, Any]:
     """复用项目进程树快照，避免频繁枚举系统进程。"""
     now = time.monotonic()
@@ -2151,33 +1221,6 @@ def _get_project_disk_usage_mb() -> float:
         return 0.0
 
 
-_SYSTEM_STATS_CACHE = {
-    "expires_at": 0.0,
-    "payload": {
-        "memory_mb": 0.0,
-        "disk_status": "0 MB",
-        "total_requests": 0,
-        "total_input_tokens": 0,
-        "total_output_tokens": 0,
-        "cpu_percent": 0.0,
-        "project_cpu": 0.0,
-        "memory_percent": 0.0,
-        "project_memory_percent": 0.0,
-        # 与实际构建的 payload 保持同一形状，避免消费方缺键
-        "running_count": 0,
-        "queued_count": 0,
-    },
-}
-_SYSTEM_STATS_CACHE_LOCK = _threading.Lock()
-_DISK_USAGE_CACHE = {
-    "expires_at": 0.0,
-    "value": 0.0,
-    "last_success_value": 0.0,
-}
-_DISK_USAGE_REFRESH_LOCK = _threading.Lock()
-_DISK_USAGE_REFRESH_WORKER: Optional[_threading.Thread] = None
-
-
 def _reset_system_stats_cache_for_tests() -> None:
     """清理系统统计缓存，供回归测试隔离并避免后台刷新状态串扰。"""
     global _PROJECT_PROCESS_CACHE, _DISK_USAGE_REFRESH_WORKER
@@ -2311,7 +1354,7 @@ def _get_project_disk_usage_mb_cached(ttl_seconds: float = 60.0) -> float:
 def _get_live_request_counts() -> Dict[str, int]:
     """实时请求计数（运行中 / 排队中）。stats 是高频轮询接口，取值失败一律回落 0，不能因此整体 500。"""
     try:
-        status = request_manager.get_status() or {}
+        status = runtime.request_manager.get_status() or {}
         status_counts = status.get("status_counts") or {}
         return {
             "running_count": int(status.get("running_count", 0) or 0),
@@ -2328,9 +1371,9 @@ def _get_fresh_system_stats_payload() -> Optional[Dict[str, Any]]:
         payload = dict(cached_payload)
         # 进程/内存采样缓存 5s；请求计数很便宜，保持实时
         payload.update(_get_live_request_counts())
-        payload["total_requests"] = int(getattr(request_manager, "total_requests", 0) or 0)
-        payload["total_input_tokens"] = int(getattr(request_manager, "total_input_tokens", 0) or 0)
-        payload["total_output_tokens"] = int(getattr(request_manager, "total_output_tokens", 0) or 0)
+        payload["total_requests"] = int(getattr(runtime.request_manager, "total_requests", 0) or 0)
+        payload["total_input_tokens"] = int(getattr(runtime.request_manager, "total_input_tokens", 0) or 0)
+        payload["total_output_tokens"] = int(getattr(runtime.request_manager, "total_output_tokens", 0) or 0)
         return payload
     return None
 
@@ -2373,9 +1416,9 @@ def _get_system_stats_payload_cached(ttl_seconds: float = 5.0) -> Dict[str, Any]
         payload = {
             "memory_mb": project_memory_mb,
             "disk_status": _format_disk_usage(_get_project_disk_usage_mb_cached()),
-            "total_requests": int(getattr(request_manager, "total_requests", 0) or 0),
-            "total_input_tokens": int(getattr(request_manager, "total_input_tokens", 0) or 0),
-            "total_output_tokens": int(getattr(request_manager, "total_output_tokens", 0) or 0),
+            "total_requests": int(getattr(runtime.request_manager, "total_requests", 0) or 0),
+            "total_input_tokens": int(getattr(runtime.request_manager, "total_input_tokens", 0) or 0),
+            "total_output_tokens": int(getattr(runtime.request_manager, "total_output_tokens", 0) or 0),
             "cpu_percent": cpu_percent,
             "project_cpu": project_cpu,
             "memory_percent": memory_percent,
@@ -2407,7 +1450,7 @@ async def get_request_history(
     # Do not impose a second 200-record ceiling at the API layer.
     safe_limit = max(1, int(limit or 200))
     return await asyncio.to_thread(
-        request_manager.get_request_history_payload,
+        runtime.request_manager.get_request_history_payload,
         safe_limit,
         bool(detail),
         if_revision,
@@ -2419,257 +1462,7 @@ async def get_request_history_detail(
     request_id: str,
     authenticated: bool = Depends(verify_auth),
 ):
-    record = await asyncio.to_thread(request_manager.get_request_history_record, request_id)
+    record = await asyncio.to_thread(runtime.request_manager.get_request_history_record, request_id)
     if not record:
         raise HTTPException(status_code=404, detail="请求历史不存在")
     return record
-
-
-# ================= 版本管理 API =================
-
-_version_switch_lock = _threading.Lock()
-_version_switch_state: dict = {
-    "running": False,
-    "tag": None,
-    "success": None,
-    "error": None,
-}
-
-_update_check_lock = _threading.Lock()
-_update_check_state: dict = {
-    "checked": False,
-    "checking": False,
-    "available": False,
-    "current_version": APP_VERSION,
-    "latest_version": "",
-    "latest_tag": "",
-    "published_at": "",
-    "repo": "",
-    "checked_at": None,
-    "error": "",
-}
-_startup_update_check_scheduled = False
-
-
-def _get_update_check_state() -> Dict[str, Any]:
-    with _update_check_lock:
-        return dict(_update_check_state)
-
-
-def _set_update_check_state(**changes: Any) -> Dict[str, Any]:
-    with _update_check_lock:
-        _update_check_state.update(changes)
-        return dict(_update_check_state)
-
-
-def _build_update_check_payload(release: Optional[dict], repo: str) -> Dict[str, Any]:
-    from app.update.engine import compare_versions, get_current_version, normalize_version
-
-    current_version = get_current_version()
-    latest_tag = ""
-    latest_version = ""
-    published_at = ""
-
-    if release:
-        latest_tag = str(release.get("tag_name") or "").strip()
-        published_at = str(release.get("published_at") or "").strip()
-        if latest_tag:
-            latest_version = normalize_version(latest_tag)
-
-    return {
-        "checked": True,
-        "checking": False,
-        "available": bool(latest_version and compare_versions(current_version, latest_version) < 0),
-        "current_version": current_version,
-        "latest_version": latest_version,
-        "latest_tag": latest_tag,
-        "published_at": published_at,
-        "repo": repo,
-        "checked_at": int(time.time()),
-        "error": "",
-    }
-
-
-def _run_update_check(repo: Optional[str] = None) -> Dict[str, Any]:
-    from app.update.engine import DEFAULT_REPO, fetch_latest_release, get_current_version
-
-    target_repo = str(repo or os.getenv("GITHUB_REPO", DEFAULT_REPO) or DEFAULT_REPO).strip()
-    if not target_repo:
-        target_repo = DEFAULT_REPO
-
-    _set_update_check_state(checking=True, repo=target_repo, error="")
-    try:
-        release = fetch_latest_release(target_repo)
-        if not release:
-            raise RuntimeError("无法获取最新版本信息")
-        payload = _build_update_check_payload(release, target_repo)
-        logger.info(
-            f"[startup] 版本检查完成: 当前 v{payload['current_version']}，"
-            f"最新 {payload['latest_tag'] or '未知'}，"
-            f"{'有新版本' if payload['available'] else '已是最新'}"
-        )
-        return _set_update_check_state(**payload)
-    except Exception as exc:
-        logger.warning(f"版本检查失败: {exc}")
-        # 修复：_set_update_check_state 是 merge 语义，失败时若不显式清空这三项，
-        # 上一次成功检查的 latest_* 会残留下来，前端会同时显示"最新版本号"和"检查失败"。
-        return _set_update_check_state(
-            checked=True,
-            checking=False,
-            available=False,
-            current_version=get_current_version(),
-            latest_version="",
-            latest_tag="",
-            published_at="",
-            checked_at=int(time.time()),
-            error=str(exc),
-        )
-
-
-def _consume_bootstrap_update_check() -> Optional[Dict[str, Any]]:
-    from app.update.engine import DEFAULT_REPO
-
-    raw = os.environ.pop("UWAPI_UPDATE_CHECK_RESULT", "")
-    try:
-        cached = json.loads(raw)
-        repo = str(os.getenv("GITHUB_REPO", DEFAULT_REPO) or DEFAULT_REPO).strip()
-        age = time.time() - float(cached["checked_at"])
-        release = cached["release"]
-        if not 0 <= age <= 300 or cached["repo"] != repo:
-            return None
-        if not isinstance(release, dict) or not isinstance(release.get("tag_name"), str) or not release["tag_name"].strip():
-            return None
-        return _build_update_check_payload(release, repo)
-    except (ValueError, TypeError, KeyError, AttributeError, OverflowError):
-        return None
-
-
-def schedule_startup_update_check() -> None:
-    """启动时只触发一次后台版本检查，供控制面板红点读取。"""
-    global _startup_update_check_scheduled
-
-    with _update_check_lock:
-        if _startup_update_check_scheduled or _update_check_state.get("checking"):
-            return
-        _startup_update_check_scheduled = True
-        cached = _consume_bootstrap_update_check()
-        if cached is not None:
-            _update_check_state.update(cached)
-            logger.info("[startup] 已复用引导阶段版本检查结果")
-            return
-        _update_check_state["checking"] = True
-        _update_check_state["error"] = ""
-
-    t = _threading.Thread(
-        target=_run_update_check,
-        daemon=True,
-        name="startup-update-check",
-    )
-    t.start()
-
-
-def _apply_release_list_update_check(releases_raw: list, repo: str) -> Dict[str, Any]:
-    release = releases_raw[0] if releases_raw else None
-    try:
-        payload = _build_update_check_payload(release, repo)
-    except Exception as exc:
-        logger.warning(f"更新版本提示状态失败: {exc}")
-        return _get_update_check_state()
-    return _set_update_check_state(**payload)
-
-
-@router.get("/api/update/check")
-async def get_update_check(authenticated: bool = Depends(verify_auth)):
-    """读取启动时缓存的版本检查状态。不会访问 GitHub。"""
-    return _get_update_check_state()
-
-
-@router.post("/api/update/check")
-async def refresh_update_check(
-    repo: Optional[str] = None,
-    authenticated: bool = Depends(verify_auth),
-):
-    """手动触发一次版本检查。"""
-    return await asyncio.to_thread(_run_update_check, repo)
-
-
-@router.get("/api/update/releases")
-async def get_releases(
-    repo: Optional[str] = None,
-    authenticated: bool = Depends(verify_auth),
-):
-    """获取 GitHub Release 列表（供控制面板手动选择版本）"""
-    try:
-        from app.update.engine import fetch_all_releases, get_current_version, normalize_version, DEFAULT_REPO
-        target_repo = repo or os.getenv("GITHUB_REPO", DEFAULT_REPO)
-        releases_raw = await asyncio.to_thread(fetch_all_releases, target_repo)
-        current_version = get_current_version()
-        update_check = _apply_release_list_update_check(releases_raw, target_repo)
-        result = []
-        for r in releases_raw:
-            tag = str(r.get("tag_name") or "").strip()
-            if not tag:
-                continue
-            result.append({
-                "tag": tag,
-                "published_at": r.get("published_at") or "",
-                "body": r.get("body") or "",
-                "zipball_url": r.get("zipball_url") or "",
-                "is_current": normalize_version(tag) == normalize_version(current_version),
-            })
-        return {"releases": result, "current_version": current_version, "update_check": update_check}
-    except Exception as e:
-        logger.error(f"获取 Release 列表失败: {e}")
-        raise HTTPException(status_code=500, detail=f"获取失败: {str(e)}")
-
-
-@router.post("/api/update/switch")
-async def switch_version(
-    request: Request,
-    authenticated: bool = Depends(verify_auth),
-):
-    """切换到指定版本（在后台线程中执行，完成后触发服务重启）"""
-    global _version_switch_state
-
-    with _version_switch_lock:
-        if _version_switch_state.get("running"):
-            raise HTTPException(status_code=409, detail="已有版本切换任务正在运行，请稍候")
-
-    data = await _read_json_object_or_400(request)
-    tag = str(data.get("tag") or "").strip()
-    if not tag:
-        raise HTTPException(status_code=400, detail="缺少 tag 参数")
-
-    def _run_switch():
-        global _version_switch_state
-        try:
-            from app.update.engine import update_to_version
-            success = update_to_version(tag)
-            with _version_switch_lock:
-                _version_switch_state = {"running": False, "tag": tag, "success": success, "error": None}
-            if success:
-                import time as _time
-                logger.warning(f"版本切换成功: {tag}，2 秒后重启服务")
-                _time.sleep(2.0)
-                from app.runtime.relaunch import restart_service
-                restart_service()
-        except Exception as exc:
-            logger.error(f"版本切换失败: {exc}")
-            with _version_switch_lock:
-                _version_switch_state = {"running": False, "tag": tag, "success": False, "error": str(exc)}
-
-    with _version_switch_lock:
-        _version_switch_state = {"running": True, "tag": tag, "success": None, "error": None}
-
-    t = _threading.Thread(target=_run_switch, daemon=True, name=f"version-switch-{tag}")
-    t.start()
-
-    logger.info(f"版本切换任务已启动: {tag}")
-    return {"status": "started", "tag": tag}
-
-
-@router.get("/api/update/status")
-async def get_version_switch_status(authenticated: bool = Depends(verify_auth)):
-    """查询当前版本切换任务状态"""
-    with _version_switch_lock:
-        return dict(_version_switch_state)

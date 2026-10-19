@@ -1057,10 +1057,12 @@ def _selector_test_session(index, tab, status="idle", domain="arena.ai"):
 
 def _patch_selector_test_helpers(monkeypatch, browser):
     from app.api import system
+    from app.api.system import diagnostics as system_diag
+    from app.api.system import runtime as system_runtime
 
-    monkeypatch.setattr(system, "get_browser", lambda: browser)
-    monkeypatch.setattr(system, "_collect_selector_test_element_snapshot", lambda _element: {})
-    monkeypatch.setattr(system, "_build_selector_top_candidates", lambda _elements: [])
+    monkeypatch.setattr(system_runtime, "get_browser", lambda: browser)
+    monkeypatch.setattr(system_diag, "_collect_selector_test_element_snapshot", lambda _element: {})
+    monkeypatch.setattr(system_diag, "_build_selector_top_candidates", lambda _elements: [])
     return system
 
 
