@@ -13,6 +13,7 @@ universal-web-api/
 ├── main.py                     # 应用入口：FastAPI 实例、中间件、静态挂载、启动流程
 ├── app/                        # 全部后端源码（FastAPI + 浏览器自动化）
 │   ├── __main__.py             # `python -m app` 薄入口（转交 main.py，行为一致）
+│   ├── paths.py                # 路径唯一来源（PROJECT_ROOT / STATIC_DIR / DOWNLOAD_DIR / CONFIG_DIR）
 │   ├── api/                    # HTTP 路由层（OpenAI / Anthropic / 控制面板接口）
 │   ├── core/                   # 核心引擎（浏览器、标签页池、工作流、解析器、提取器）
 │   ├── models/                 # Pydantic 数据模型 / 请求响应 Schema
@@ -74,6 +75,7 @@ universal-web-api/
 | --- | --- |
 | `main.py` | **应用入口**。定义 `FastAPI` 实例；注册 CORS、认证、媒体访问、请求 ID、异常处理等中间件；挂载 `/static`、`/download_images`；实现 `/`（控制面板）、`/dashboard`、`/media/{filename}`、受控浏览器引导数据接口；`include_router(api_router)` 汇总全部 API；`lifespan` 中完成浏览器连接、标签页池初始化、看门狗启动；作为脚本运行时先调用 `bootstrap_runtime()`。 |
 | `app/__init__.py` | 从 `VERSION` 文件读取 `__version__`。 |
+| `app/paths.py` | 全项目路径的唯一来源（绝对路径）。需要目录时调用 `download_dir()` / `logs_dir()`（每次读模块常量，便于测试替换）；`resolve_project_path()` 把配置里的相对路径按项目根解析。 |
 | `pyproject.toml` | 项目元数据 + 运行依赖 + `dev` 依赖组 + `uv` / `pytest` / `ruff` 配置。依赖只用 uv 管理，不再有 `requirements.txt`。 |
 | `uv.lock` | 全量精确锁定（含哈希），`uv sync` 依据它建 `.venv`。 |
 | `.python-version` | 固定 `3.12`，uv 首次运行时自动下载对应解释器（项目声明最低支持 3.10）。 |

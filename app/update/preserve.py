@@ -7,8 +7,10 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List
 
+from app.paths import CONFIG_DIR
 
-UPDATE_SETTINGS_FILE = Path("config") / "update_settings.json"
+
+UPDATE_SETTINGS_FILE = Path(CONFIG_DIR) / "update_settings.json"
 
 
 def _replace_file_with_retry(source: str | Path, dest: str | Path) -> None:

@@ -184,3 +184,59 @@ def test_parser_registry_points_at_existing_module():
     for path in APP.rglob("*.py"):
         if path.name == "mimo_parser.py":
             pytest.fail(f"重复的 MiMo 解析器副本仍然存在：{path.relative_to(ROOT)}")
+
+
+# ---------------------------------------------------------------------------
+# C1：路径必须来自 app.paths，不能依赖当前工作目录
+# ---------------------------------------------------------------------------
+
+CWD_LITERAL_PATTERNS = (
+    'Path("download_images")',
+    "Path('download_images')",
+    'Path("static")',
+    "Path('static')",
+    'directory="static"',
+    'directory="download_images"',
+)
+
+
+def test_app_code_does_not_use_cwd_relative_literals():
+    """``Path("static")`` 这类写法只在「CWD 恰好是仓库根」时正确。
+
+    生产代码必须走 :mod:`app.paths`（绝对路径）；唯一的例外是 ``app/paths.py``
+    自身（文档字符串里会举例说明旧写法）。
+    """
+    offenders = []
+    for path in _iter_app_modules():
+        if path.name == "paths.py" and path.parent == APP:
+            continue
+        text = path.read_text(encoding="utf-8")
+        for pattern in CWD_LITERAL_PATTERNS:
+            if pattern in text:
+                offenders.append(f"{path.relative_to(ROOT)}: {pattern}")
+    assert not offenders, (
+        "以下位置仍按当前工作目录解析路径，请改用 app.paths：\n" + "\n".join(offenders)
+    )
+
+
+def test_main_mounts_absolute_media_and_static_dirs():
+    source = (ROOT / "main.py").read_text(encoding="utf-8")
+    assert 'StaticFiles(directory=str(paths.STATIC_DIR))' in source
+    assert "paths.download_dir()" in source
+    assert 'HardenedMediaStaticFiles(directory="download_images")' not in source
+
+
+def test_runtime_bootstrap_pins_cwd_to_project_root():
+    """脚本启动时把工作目录固定到项目根，避免第三方/旧代码的相对路径走偏。"""
+    source = (ROOT / "app/runtime/bootstrap.py").read_text(encoding="utf-8")
+    assert "def ensure_project_cwd()" in source
+    assert "os.chdir(PROJECT_ROOT)" in source
+    assert "ensure_project_cwd()" in source.split("def bootstrap_runtime", 1)[1]
+
+
+def test_background_downloader_has_no_cwd_default():
+    """后台图片下载器是进程级单例，保存目录不能固化成启动时的 CWD。"""
+    source = (ROOT / "app/core/background_image_downloader.py").read_text(encoding="utf-8")
+    assert 'save_dir: str | Path = "download_images"' not in source
+    assert "def set_save_dir(" in source
+    assert "def clear_cache(" in source

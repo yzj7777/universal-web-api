@@ -2,7 +2,7 @@
 
 > 依据 [`docs/STRUCTURE-REVIEW.md`](./STRUCTURE-REVIEW.md) 的 P0 / P1 结论，执行「阶段 A + 阶段 B 的包边界部分」。
 > 原则：**只做可验证的结构调整，不改变任何运行时行为**。
-> 验证基线见 §5：改动前后同为 **2 个既有失败**，新增 13 个结构测试全部通过。
+> 验证基线见 §5：改动前后同为 **2 个既有失败**，新增 16 个结构测试全部通过。
 
 ---
 
@@ -21,7 +21,7 @@
 | B1 | 包边界 | `updater` / `update_preserve` / `clean_profile` → `app/update/`，根目录留兼容壳 | 中 | ✅ |
 | B2 | 入口 | 新增 `app/__main__.py`，支持 `python -m app` | 低 | ✅ |
 | B3 | 防回归 | 新增 `tests/test_structure.py`（13 项结构棘轮） | 无 | ✅ |
-| C1 | 暂缓 | `app/core/paths.py` + 消除 24 处 CWD 相对路径 | — | ⏸ 见 §6 |
+| C1 | 路径 | 新增 `app/paths.py`，消除 CWD 相对路径 + 启动时固定工作目录 | 中 | ✅ |
 | C2 | 暂缓 | 拆分 `tab_routes.py`(5142) / `chat.py`(3299) / `system.py`(2674) | — | ⏸ 见 §6 |
 | C3 | 暂缓 | `config/` 只读 + `var/` 可写数据目录 | — | ⏸ 见 §6 |
 | C4 | 暂缓 | `src/` 布局、包改名 `app` → `uwapi` | — | ⏸ 见 §6 |
@@ -223,7 +223,7 @@ def main() -> None:
 
 | 指标 | 改动前 | 改动后 | 结论 |
 | --- | --- | --- | --- |
-| `pytest` 通过 | 1302 | **1315** | +13，全部为新增结构测试 |
+| `pytest` 通过 | 1302 | **1319** | +17（15 项结构棘轮 + 2 项用例适配） |
 | `pytest` 失败 | 2 | **2** | 同一批既有失败，未新增 |
 | `pytest` 跳过 | 157 | 157 | 不变 |
 | `ruff check .` | 通过 | 通过 | 无新增告警 |
@@ -254,17 +254,70 @@ python -m app
 
 这些项在评审里列为 P1，但**不能只改目录**，必须连带改测试或数据迁移，故单独排期。
 
-### C1 `app/core/paths.py` + 消除 CWD 相对路径
+### C1 已完成：`app/paths.py` + 消除 CWD 相对路径 ✅
 
-现状：`main.py` 的 `Path("static")` / `Path("download_images")`，`browser/media.py` 的 4 处
-`save_dir = Path("download_images")`，`extractors/media_extractor.py` 1 处。
+**改动**
 
-**为什么暂缓**：`tests/test_review_fixes_p1.py` 等用例刻意用 `monkeypatch.chdir(tmp_path)` +
-`Path("download_images")` 做**磁盘隔离**，断言「图片写进了临时目录」。改成绝对路径会让这些用例
-开始往仓库里写文件。正确做法是同 PR 内引入可注入的 `DOWNLOAD_DIR` 并改写这些用例，
-属于「改行为 + 改测试」的组合改动，不适合与本次结构整理混在一起。
+1. 新增 `app/paths.py`（只依赖标准库，刻意放在 `app/` 顶层而不是 `app/core/`，
+   避免为了取路径而触发浏览器相关导入）：
 
-### C2 拆分巨型路由文件
+   ```python
+   PROJECT_ROOT = Path(__file__).resolve().parents[1]
+   STATIC_DIR   = PROJECT_ROOT / "static"
+   CONFIG_DIR   = PROJECT_ROOT / "config"
+   DOWNLOAD_DIR = PROJECT_ROOT / "download_images"
+   LOGS_DIR     = PROJECT_ROOT / "logs"
+
+   def download_dir(*, create=True) -> Path   # 每次调用读模块常量 → 可被 monkeypatch
+   def resolve_project_path(raw) -> Path      # 配置里的相对路径按项目根解析
+   ```
+
+2. 改造调用点：
+   - `main.py`：静态挂载、`/media/{filename}`、`/download_images` 挂载、Dashboard 解析
+     全部改用绝对路径；`_resolve_dashboard_path()` 的相对配置项按项目根解析。
+   - `app/core/browser/media.py`（4 处）、`app/core/extractors/media_extractor.py`（1 处）
+     → `paths.download_dir()`。
+   - `app/core/parsers/deepseek_parser.py` 的调试落盘 → `paths.logs_dir()`。
+   - `app/core/config_parts/env_config.py` 的 `PROJECT_ROOT` / `DEFAULT_LOG_DIR`
+     改为复用 `app.paths`（全仓库单一定义）。
+   - `app/update/preserve.py`、`app/api/system.py` 的 `config/update_settings.json`
+     → `CONFIG_DIR` 绝对路径。
+
+3. `app/core/background_image_downloader.py`：进程级单例原本在 import 时把
+   `Path("download_images")` 固化，现在改为**懒解析** `app.paths.download_dir()`，
+   并新增 `set_save_dir()` / `clear_cache()` 供测试隔离。
+
+4. `main.py` 的 `HardenedMediaStaticFiles` 在**每次请求**重新解析目录
+   （媒体目录是运行时数据，测试会替换它，不能固化成 import 时的值）。
+
+5. `app/runtime/bootstrap.py` 新增 `ensure_project_cwd()`，脚本启动时把工作目录固定到
+   项目根：项目内仍有少量按相对路径访问的资产（用户脚本、profile、第三方配置），
+   这一层是兜底；即使走 `uvicorn main:app` 跳过 bootstrap，静态/媒体目录也已用绝对路径。
+
+**测试适配（这是原计划的难点）**
+
+- `tests/conftest.py` 新增 **autouse fixture** `_isolate_download_dir`：
+  每个用例把 `paths.DOWNLOAD_DIR` 指到自己的 `tmp_path / "download_images"`，
+  同时重定向后台下载器的保存目录并清空 URL 缓存。
+  这样「`monkeypatch.chdir(tmp_path)` + 断言 `tmp_path / "download_images"`」的既有写法
+  **不需要逐个改写**。
+- 两个真正写文件的用例改为 `paths.download_dir()`：
+  `test_review_fixes_p1.py::test_served_media_is_hardened_for_legacy_active_files`、
+  `test_review_fixes_p2.py::test_s6_media_routes_require_auth_when_enabled`。
+
+**新增棘轮**（`tests/test_structure.py`）
+
+- `test_app_code_does_not_use_cwd_relative_literals`：`app/` 内禁止
+  `Path("static")` / `Path("download_images")` / `directory="static"` 等字面量；
+- `test_main_mounts_absolute_media_and_static_dirs`；
+- `test_runtime_bootstrap_pins_cwd_to_project_root`；
+- `test_background_downloader_has_no_cwd_default`。
+
+**验证**：从 `/tmp` 用 `PYTHONPATH` 导入 `main`，`_resolve_dashboard_path()` 仍返回
+`/repo/static/index.html`，`paths.download_dir()` 返回绝对目录，`ensure_project_cwd()`
+把 CWD 切回项目根——即「不是从项目根启动」也不再走偏。
+
+### C2 暂缓：拆分巨型路由文件
 
 `app/api/tab_routes.py`(5142) / `chat.py`(3299) / `system.py`(2674)。路由**注册顺序**会影响
 带路径参数的匹配（`/url/{route_domain}/...` vs 静态路径），必须逐一比对 `app.routes` 的最终顺序；
@@ -290,6 +343,7 @@ python -m app
 删除    app/core/parsers/mimo_parser.py
 新增    .github/workflows/ci.yml
 新增    app/__main__.py
+新增    app/paths.py
 新增    app/update/__init__.py
 新增    tests/test_structure.py
 新增    tests/manual/README.md
@@ -303,13 +357,21 @@ python -m app
 移动    perf_watch.py         → tools/perf_watch.py
 移动    tests/browser_*.py    → tests/manual/（5 个）
 移动    tests/e2e_*_headed.py → tests/manual/（2 个）
+修改    main.py（绝对路径挂载 / 媒体目录 / Dashboard 解析）
+修改    app/core/background_image_downloader.py（懒解析 + set_save_dir/clear_cache）
+修改    app/core/browser/media.py
+修改    app/core/config_parts/env_config.py
+修改    app/core/extractors/media_extractor.py
+修改    app/core/parsers/deepseek_parser.py
+修改    app/update/preserve.py
 修改    app/api/system.py
 修改    app/runtime/bootstrap.py
 修改    app/services/adapter_updates.py
 修改    app/services/config/site_store.py
 修改    app/core/parsers/__init__.py
 修改    app/core/parsers/mimo_runtime_parser.py
-修改    tests/conftest.py
+修改    tests/conftest.py（autouse 隔离媒体目录）
+修改    tests/test_review_fixes_p1.py / tests/test_review_fixes_p2.py（写文件目录）
 修改    tests/test_repo_hygiene.py
 修改    tests/fixtures/broad_except_ratchet.json
 修改    README.md / README.zh-CN.md / README.en.md

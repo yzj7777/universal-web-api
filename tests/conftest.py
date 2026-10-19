@@ -166,6 +166,31 @@ REAL_BROWSER_FIXTURES = frozenset({"real_page", "headed_page"})
 collect_ignore = ["manual"]
 
 
+@pytest.fixture(autouse=True)
+def _isolate_download_dir(tmp_path, monkeypatch):
+    """把媒体下载目录隔离到每个测试自己的 tmp_path。
+
+    生产代码改用 ``app.paths.download_dir()`` 的绝对路径（不再依赖 CWD），
+    因此测试不能再靠 ``monkeypatch.chdir(tmp_path)`` 来隔离落盘；
+    这里统一重定向，测试断言 ``tmp_path / "download_images"`` 的写法保持不变。
+    """
+    from app import paths
+
+    target = tmp_path / "download_images"
+    monkeypatch.setattr(paths, "DOWNLOAD_DIR", target, raising=False)
+
+    # 后台图片下载器是进程级单例：保存目录同样重定向，并清空跨用例的 URL 缓存，
+    # 否则上一个用例落盘的绝对路径会被下一个用例当成「已下载」直接命中。
+    from app.core.background_image_downloader import background_image_downloader
+
+    original_save_dir = background_image_downloader.save_dir
+    background_image_downloader.set_save_dir(target)
+    background_image_downloader.clear_cache()
+    yield target
+    background_image_downloader.set_save_dir(original_save_dir)
+    background_image_downloader.clear_cache()
+
+
 def pytest_collection_modifyitems(config: pytest.Config, items) -> None:
     for item in items:
         if REAL_BROWSER_FIXTURES.intersection(getattr(item, "fixturenames", ())):

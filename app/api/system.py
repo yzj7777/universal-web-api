@@ -39,6 +39,7 @@ from app.services.command_engine import command_engine
 from app.services.extractor_manager import extractor_manager
 from app.services.request_manager import request_manager
 from app.utils.site_url import extract_remote_site_domain, route_domain_matches
+from app.paths import CONFIG_DIR
 from app.update.preserve import load_update_preserve_settings, save_update_preserve_settings
 from app.core.driver import as_element, driver_for_tab
 
@@ -1134,7 +1135,7 @@ async def import_settings_backup(
                 imported_sections.append("extractors")
 
             if "update_preserve" in files:
-                remember_file(Path("config") / "update_settings.json")
+                remember_file(Path(CONFIG_DIR) / "update_settings.json")
                 save_update_preserve_settings(files["update_preserve"])
                 imported_sections.append("update_preserve")
 

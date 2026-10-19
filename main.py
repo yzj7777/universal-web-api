@@ -37,6 +37,7 @@ from typing import Any, Dict, Optional
 from urllib.request import urlopen
 from contextlib import asynccontextmanager
 from app import __version__ as APP_VERSION
+from app import paths
 from app.core import get_browser
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -428,10 +429,11 @@ def _resolve_dashboard_path():
         if configured_path.is_absolute():
             candidates.append(configured_path)
         else:
-            candidates.append(configured_path)
-            candidates.append(Path("static") / configured_path)
+            # 相对路径一律按项目根目录解析，避免受启动时工作目录影响
+            candidates.append(paths.PROJECT_ROOT / configured_path)
+            candidates.append(paths.STATIC_DIR / configured_path)
 
-    candidates.append(Path("static/index.html"))
+    candidates.append(paths.STATIC_DIR / "index.html")
 
     seen = set()
     for candidate in candidates:
@@ -834,7 +836,7 @@ def _resolve_download_media_path(filename: str) -> Path:
     if not safe_name or safe_name != str(filename or ""):
         raise HTTPException(status_code=400, detail="invalid_media_filename")
 
-    base_dir = Path("download_images").resolve()
+    base_dir = paths.download_dir().resolve()
     path = (base_dir / safe_name).resolve()
     if base_dir not in path.parents or not path.is_file():
         raise HTTPException(status_code=404, detail="media_not_found")
@@ -987,14 +989,25 @@ app.add_middleware(RequestMetricsMiddleware)
 
 # ================= 挂载静态文件 =================
 
-if Path("static").exists():
-    app.mount("/static", StaticFiles(directory="static"), name="static")
+if paths.STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(paths.STATIC_DIR)), name="static")
 
-# 🆕 挂载图片下载目录
-download_images_dir = Path("download_images")
-download_images_dir.mkdir(exist_ok=True)  # 自动创建目录
+# 🆕 挂载图片下载目录（绝对路径；目录在 paths.download_dir() 里按需创建）
+download_images_dir = paths.download_dir()
 class HardenedMediaStaticFiles(StaticFiles):
-    """S8/S9：/download_images 出口加固——非白名单扩展名强制下载，统一 nosniff + sandbox CSP。"""
+    """S8/S9：/download_images 出口加固——非白名单扩展名强制下载，统一 nosniff + sandbox CSP。
+
+    目录在每次请求时从 ``app.paths.download_dir()`` 重新解析：
+    媒体目录是运行时数据，测试会把它替换成临时目录，不能在 import 时固化成闭包值。
+    """
+
+    def _refresh_directories(self) -> None:
+        self.directory = str(paths.download_dir())
+        self.all_directories = self.get_directories(self.directory, self.packages)
+
+    async def get_response(self, path, scope):
+        self._refresh_directories()
+        return await super().get_response(path, scope)
 
     def file_response(self, full_path, stat_result, scope, status_code=200):
         from app.utils.media_safety import resolve_media_delivery, safe_media_response_headers
@@ -1012,8 +1025,8 @@ class HardenedMediaStaticFiles(StaticFiles):
         return response
 
 
-app.mount("/download_images", HardenedMediaStaticFiles(directory="download_images"), name="download_images")
-logger.info(f"📁 图片下载目录: {download_images_dir.absolute()}")
+app.mount("/download_images", HardenedMediaStaticFiles(directory=str(download_images_dir)), name="download_images")
+logger.info(f"📁 图片下载目录: {download_images_dir}")
 
 
 # ================= 异常处理 =================

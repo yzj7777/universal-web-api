@@ -14,6 +14,7 @@ from urllib.parse import urlparse, urlsplit
 from typing import Optional, List, Dict, Any, Callable, TYPE_CHECKING
 import requests
 
+from app import paths
 from app.core.config import logger, AppConfig, BrowserConstants
 from app.models.schemas import (
     get_enabled_modalities,
@@ -2074,8 +2075,7 @@ class BrowserMediaMixin:
         if not media_items or tab is None:
             return media_items
 
-        save_dir = Path("download_images")
-        save_dir.mkdir(exist_ok=True)
+        save_dir = paths.download_dir()
         max_bytes = max(1, int(max_size_mb)) * 1024 * 1024
 
         # S8/S9：扩展名统一由 app.utils.media_safety 白名单决定（不再使用本地 ext_map / URL 后缀）
@@ -2428,7 +2428,7 @@ class BrowserMediaMixin:
         if not remote_indexes:
             return candidates
 
-        out_dir = Path("download_images")
+        out_dir = paths.download_dir()
         out_dir.mkdir(exist_ok=True)
 
         selector = image_config.get("selector", "img")
@@ -2850,8 +2850,7 @@ class BrowserMediaMixin:
         if not media_items:
             return media_items
 
-        save_dir = Path("download_images")
-        save_dir.mkdir(exist_ok=True)
+        save_dir = paths.download_dir()
         try:
             max_bytes = max(1, int(max_size_mb or 10)) * 1024 * 1024
         except (TypeError, ValueError):
@@ -3022,8 +3021,7 @@ class BrowserMediaMixin:
         result = []
         
         # 确保目录存在
-        save_dir = Path("download_images")
-        save_dir.mkdir(exist_ok=True)
+        save_dir = paths.download_dir()
         canvas_image_max_size = AppConfig.get_canvas_image_max_size()
         max_canvas_image_bytes = max(1, canvas_image_max_size * canvas_image_max_size * 4)
 

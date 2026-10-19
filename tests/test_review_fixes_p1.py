@@ -408,8 +408,10 @@ def test_served_media_is_hardened_for_legacy_active_files():
     import main
     from httpx import ASGITransport, AsyncClient
 
-    base = Path("download_images")
-    base.mkdir(exist_ok=True)
+    from app import paths
+
+    # 媒体目录由 _isolate_download_dir 指向 tmp_path，生产代码按请求解析该目录。
+    base = paths.download_dir()
     names = {"_review_s8_legacy.svg": SVG_PAYLOAD, "_review_s9_legacy.html": HTML_PAYLOAD,
              "_review_ok.png": b"\x89PNG\r\n\x1a\n" + b"\x00" * 32}
     for name, data in names.items():

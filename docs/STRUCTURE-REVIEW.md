@@ -4,7 +4,7 @@
 > 规模基线（评审时）：`app/` 223 个 Python 文件 / 114,172 行；`app/api` 18 文件 18.4k 行，`app/core` 111 文件 58.3k 行，`app/services` 61 文件 29.6k 行；`static/js` 45 个 JS，`tests/` 94 个 py（81 个 `test_*`），`docs/` 22 个 md。
 >
 > **执行状态（2026-10）**：阶段 A 与 B1/B2 已落地并通过全量回归，见
-> [`docs/STRUCTURE-FIX-CHECKLIST.md`](./STRUCTURE-FIX-CHECKLIST.md)；C1–C4 有意暂缓（同文档 §6 说明原因）。
+> [`docs/STRUCTURE-FIX-CHECKLIST.md`](./STRUCTURE-FIX-CHECKLIST.md)；C1（路径）后续补齐，C2–C4 有意暂缓（同文档 §6 说明原因）。
 
 ---
 
@@ -217,7 +217,7 @@ CPython 的 `FileFinder` 在解析 `app.core.browser` 时**先检查目录 + `__
 
 ---
 
-### P1-2 两套路径约定并存：`PROJECT_ROOT` 与 CWD 相对路径
+### P1-2 两套路径约定并存：`PROJECT_ROOT` 与 CWD 相对路径　✅ 已修复（C1）
 
 `PROJECT_ROOT` 在 `app/` 里出现 62 次（正确做法），同时有 **24 处** CWD 相对字面量：
 
