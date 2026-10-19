@@ -22,7 +22,7 @@
 | B2 | 入口 | 新增 `app/__main__.py`，支持 `python -m app` | 低 | ✅ |
 | B3 | 防回归 | 新增 `tests/test_structure.py`（13 项结构棘轮） | 无 | ✅ |
 | C1 | 路径 | 新增 `app/paths.py`，消除 CWD 相对路径 + 启动时固定工作目录 | 中 | ✅ |
-| C2 | 分层 | 新增 `app/api/admin/`、`stream_helpers.py`、`openai_responses_support.py`，路由表快照棘轮 | 中 | 🟡 部分完成（见 §6） |
+| C2 | 分层 | 新增 `app/api/admin/`、`app/api/openai/`、`stream_helpers.py`、`openai_responses_support.py`，路由表快照棘轮 | 中 | 🟡 部分完成（见 §6） |
 | C3 | 暂缓 | `config/` 只读 + `var/` 可写数据目录 | — | ⏸ 见 §6 |
 | C4 | 暂缓 | `src/` 布局、包改名 `app` → `uwapi` | — | ⏸ 见 §6 |
 
@@ -223,7 +223,7 @@ def main() -> None:
 
 | 指标 | 改动前 | 改动后 | 结论 |
 | --- | --- | --- | --- |
-| `pytest` 通过 | 1302 | **1328** | +26（结构棘轮 + 路由表棘轮 + 用例适配） |
+| `pytest` 通过 | 1302 | **1329** | +26（结构棘轮 + 路由表棘轮 + 用例适配） |
 | `pytest` 失败 | 2 | **2** | 同一批既有失败，未新增 |
 | `pytest` 跳过 | 157 | 157 | 不变 |
 | `ruff check .` | 通过 | 通过 | 无新增告警 |
@@ -318,7 +318,7 @@ python -m app
 `/repo/static/index.html`，`paths.download_dir()` 返回绝对目录，`ensure_project_cwd()`
 把 CWD 切回项目根——即「不是从项目根启动」也不再走偏。
 
-### C2 进行中：拆分巨型路由文件（第一、二批已完成）
+### C2 进行中：拆分巨型路由文件（第一、二、三批已完成）
 
 **第一批（已执行）**
 
@@ -359,6 +359,34 @@ python -m app
 `_responses_input_to_messages` / `_responses_request_to_chat_request`（依赖上述状态缓存与请求上下文）、
 三个端点与 `_stream_*_with_lifecycle`。
 
+**第三批（已执行）：`tab_routes.py` 按 URL 前缀四拆**
+
+| 迁移 | 从 | 到 | 行数 |
+| --- | --- | --- | --- |
+| `/tab/{tab_index}/v1/*` 端点与执行器 | `app/api/tab_routes.py` | `app/api/openai/tab.py` | 831 |
+| `/url/{route_domain}[/{preset_name}]/v1/*` 与按模型名路由 | 同上 | `app/api/openai/url.py` | 1120 |
+| `/group/{group_id}[/{preset_name}]/v1/*` | 同上 | `app/api/openai/group.py` | 351 |
+| `/tab-url/{url_token}[/{preset_name}]/v1/*` | 同上 | `app/api/openai/tab_url.py` | 955 |
+| 公共解析/配置/SSE/生命周期辅助 + 唯一的 `router` 实例 | 同上 | `app/api/openai/shared.py` | 1320 |
+| 运行期依赖（`get_browser` / `request_manager` / `cancel_storm_guard`） | 同上 | `app/api/openai/runtime.py` | 11 |
+
+结果：`tab_routes.py` **4461 → 316 行**（只剩聚合层：导入四个分组模块 + 再导出原有名字）。
+四个分组模块**共用 `shared.router` 这一个 `APIRouter` 实例**，因此 18 个端点的 URL、
+注册顺序、以及 `app.routes` 快照与拆分前逐条一致（134 条零差异）。
+
+**搬迁手法**：先用 AST 算出每个函数的**调用闭包**，按名字后缀归入四组之一
+（`_with_tab_index` / `_route_domain` / `exact_url` / `route_group`），其余为 `shared`；
+再校验模块依赖是 DAG（`shared ← tab ← url ← {group, tab_url}`），据此生成导入。
+导入按“实际用到的名字”裁剪，避免 F401。
+
+**为什么要 `runtime.py`**：测试原先用 `monkeypatch.setattr(tab_routes, "get_browser", ...)`
+替换模块全局。实现散到 5 个模块后，这种打补丁会静默失效（Python 名称在定义模块解析）。
+把这类进程级依赖集中到 `runtime` 后，替换只有一个落点，测试与运行期都更稳。
+
+**同步的测试改动**（补丁目标随实现移动，语义不变）：
+`test_cancel_storm_regressions.py`、`test_chat_job.py`、`test_protocol_conformance.py`、
+`test_request_lifecycle_safety.py`、`test_tab_route_group_api.py`。
+
 **迁移手法**：用 AST 计算每个函数/模型的 `(起始行, 结束行)`（含装饰器），
 从原文件**整段摘除**并原样拼进新模块，避免手抄引入差异；随后补齐 import、
 跑路由快照 + 全量回归。异常棘轮基线做了一次**纯搬迁**更新
@@ -366,8 +394,8 @@ python -m app
 
 **后续（未完成）**
 
-- `tab_routes.py` 仍有 4461 行：按 `/tab/{i}`、`/url/{domain}`、`/group/{id}`、`/tab-url/{token}`
-  继续拆成 `app/api/openai/` 下的四个模块；拆分时沿用同一套「先导出路由快照 → 再搬代码」流程。
+- `app/api/openai/shared.py` 仍有 1320 行：可再按「标签页解析 / 配置与覆盖项 / SSE / 工具调用」
+  四块下沉，但它是四组路由的共同底座，收益低于风险，暂缓。
 - `chat.py` 2542 行：`/v1/chat/completions`、`/v1/responses`、`/v1/models` 三块可各自独立；Responses 的**状态缓存**仍是最大的耦合点，拆端点前需先把缓存下沉到 `app/services/`。
 - `system.py` 2674 行：`/health`、`/api/settings/*`、`/api/update/*`、`/api/system/*`
   应按「探活 / 设置 / 更新 / 诊断」四组分别落到 `admin/` 与 `system/`。
@@ -399,6 +427,13 @@ python -m app
 新增    app/api/admin/presets.py
 新增    app/api/stream_helpers.py
 新增    app/api/openai_responses_support.py
+新增    app/api/openai/__init__.py
+新增    app/api/openai/shared.py
+新增    app/api/openai/tab.py
+新增    app/api/openai/url.py
+新增    app/api/openai/group.py
+新增    app/api/openai/tab_url.py
+新增    app/api/openai/runtime.py
 新增    tests/test_route_table.py
 新增    tests/fixtures/route_table.json
 新增    app/paths.py
@@ -424,7 +459,7 @@ python -m app
 修改    app/update/preserve.py
 修改    app/api/system.py
 修改    app/api/chat.py（拆出 Responses 转换层与流式辅助）
-修改    app/api/tab_routes.py（拆出面板端点与流式辅助）
+修改    app/api/tab_routes.py（拆出面板端点、流式辅助与四个路由分组；现为 316 行聚合层）
 修改    tests/fixtures/broad_except_ratchet.json
 修改    app/runtime/bootstrap.py
 修改    app/services/adapter_updates.py

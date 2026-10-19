@@ -8,6 +8,7 @@ from starlette.responses import StreamingResponse
 
 from app.api.anthropic_routes import _anthropic_stream_from_openai
 from app.api import tab_routes
+from app.api.openai import runtime as tab_runtime
 from app.services.request_manager import RequestContext
 from app.services.request_lifecycle import run_tracked_blocking_call
 from app.core.config import _request_context
@@ -93,7 +94,7 @@ def test_tab_stream_emits_initial_keepalive_before_browser_result(monkeypatch):
 
             return _workflow()
 
-    monkeypatch.setattr(tab_routes, "get_browser", lambda auto_connect=False: _Browser())
+    monkeypatch.setattr(tab_runtime, "get_browser", lambda auto_connect=False: _Browser())
 
     async def exercise():
         ctx = RequestContext(request_id="req-initial-keepalive")
