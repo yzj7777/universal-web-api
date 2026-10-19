@@ -22,7 +22,7 @@
 | B2 | 入口 | 新增 `app/__main__.py`，支持 `python -m app` | 低 | ✅ |
 | B3 | 防回归 | 新增 `tests/test_structure.py`（13 项结构棘轮） | 无 | ✅ |
 | C1 | 路径 | 新增 `app/paths.py`，消除 CWD 相对路径 + 启动时固定工作目录 | 中 | ✅ |
-| C2 | 分层 | 新增 `app/api/admin/`、`app/api/openai/`、`app/api/system/`、`stream_helpers.py`、`openai_responses_support.py`，路由表快照棘轮 | 中 | 🟡 基本完成（见 §6） |
+| C2 | 分层 | 新增 `app/api/admin/`、`app/api/openai/`、`app/api/system/`、`stream_helpers.py`、`openai_responses_support.py`，路由表快照棘轮 | 中 | ✅ |
 | C3 | 暂缓 | `config/` 只读 + `var/` 可写数据目录 | — | ⏸ 见 §6 |
 | C4 | 暂缓 | `src/` 布局、包改名 `app` → `uwapi` | — | ⏸ 见 §6 |
 
@@ -318,7 +318,7 @@ python -m app
 `/repo/static/index.html`，`paths.download_dir()` 返回绝对目录，`ensure_project_cwd()`
 把 CWD 切回项目根——即「不是从项目根启动」也不再走偏。
 
-### C2 进行中：拆分巨型路由文件（第一至四批已完成）
+### C2 已完成（四批）：拆分巨型路由文件
 
 **第一批（已执行）**
 
@@ -359,32 +359,6 @@ python -m app
 `_responses_input_to_messages` / `_responses_request_to_chat_request`（依赖上述状态缓存与请求上下文）、
 三个端点与 `_stream_*_with_lifecycle`。
 
-**第四批（已执行）：`system.py` 按「探活 / 设置 / 更新 / 诊断」四拆**
-
-| 迁移 | 从 | 到 | 行数 |
-| --- | --- | --- | --- |
-| `/health`、`/api/logs`（GET/DELETE） | `app/api/system.py` | `app/api/system/health.py` | 92 |
-| `/api/settings/*`（.env、备份、浏览器常量、更新保留项） | 同上 | `app/api/system/settings.py` | 804 |
-| `/api/update/*` | 同上 | `app/api/system/updates.py` | 266 |
-| `/api/debug/*`、`/api/system/*`（选择器测试、进程/磁盘统计、请求历史） | 同上 | `app/api/system/diagnostics.py` | 1468 |
-| 公共辅助（JSON/文件、原子写、`.env` 读写、重启调度） | 同上 | `app/api/system/common.py` | 81 |
-| 运行期依赖（`get_browser` / `request_manager`） | 同上 | `app/api/system/runtime.py` | 11 |
-
-结果：`system.py` **2675 行 → `app/api/system/` 包**，`app/api/system/__init__.py`（240 行）
-是聚合层：导入四个分组 + 再导出全部原有名字，`from app.api.system import router` 与
-`from app.api import system; system.<name>` 均保持不变。
-
-**与评审清单的差异（有意为之）**：清单原写「分别落到 `admin/` 与 `system/`」，实际四组都放在
-`app/api/system/`。原因：四个分组共用 `common.py`（`_read_json_object_or_400`、
-`_load_env_config_from_file`）；若把「设置/更新」放进 `admin/`，会形成
-`admin → system.common` 的反向依赖，比现状更难维护。`admin/` 仍只放 `/api/tab-pool/*`
-与 `/api/presets/*` 这类面板管理端点。
-
-**手法**：以带 `@router.*` 的端点为种子计算调用闭包，被两个及以上分组用到的函数/常量
-归入 `common`（本例只有 2 个函数 + 2 个常量）；校验无跨分组边后按闭包生成导入。
-常量（如 `_SYSTEM_STATS_CACHE`、`_update_check_state`）跟随唯一使用它的分组，
-避免可变全局被复制成两份。
-
 **第三批（已执行）：`tab_routes.py` 按 URL 前缀四拆**
 
 | 迁移 | 从 | 到 | 行数 |
@@ -418,11 +392,37 @@ python -m app
 跑路由快照 + 全量回归。异常棘轮基线做了一次**纯搬迁**更新
 （`tab_routes` 69 → 55，`pool` +10，`presets` +5，总数不增）。
 
+**第四批（已执行）：`system.py` 按「探活 / 设置 / 更新 / 诊断」四拆**
+
+| 迁移 | 从 | 到 | 行数 |
+| --- | --- | --- | --- |
+| `/health`、`/api/logs`（GET/DELETE） | `app/api/system.py` | `app/api/system/health.py` | 92 |
+| `/api/settings/*`（.env、备份、浏览器常量、更新保留项） | 同上 | `app/api/system/settings.py` | 804 |
+| `/api/update/*` | 同上 | `app/api/system/updates.py` | 266 |
+| `/api/debug/*`、`/api/system/*`（选择器测试、进程/磁盘统计、请求历史） | 同上 | `app/api/system/diagnostics.py` | 1468 |
+| 公共辅助（JSON/文件、原子写、`.env` 读写、重启调度） | 同上 | `app/api/system/common.py` | 81 |
+| 运行期依赖（`get_browser` / `request_manager`） | 同上 | `app/api/system/runtime.py` | 11 |
+
+结果：`system.py` **2675 行 → `app/api/system/` 包**，`app/api/system/__init__.py`（240 行）
+是聚合层：导入四个分组 + 再导出全部原有名字，`from app.api.system import router` 与
+`from app.api import system; system.<name>` 均保持不变。
+
+**与评审清单的差异（有意为之）**：清单原写「分别落到 `admin/` 与 `system/`」，实际四组都放在
+`app/api/system/`。原因：四个分组共用 `common.py`（`_read_json_object_or_400`、
+`_load_env_config_from_file`）；若把「设置/更新」放进 `admin/`，会形成
+`admin → system.common` 的反向依赖，比现状更难维护。`admin/` 仍只放 `/api/tab-pool/*`
+与 `/api/presets/*` 这类面板管理端点。
+
+**手法**：以带 `@router.*` 的端点为种子计算调用闭包，被两个及以上分组用到的函数/常量
+归入 `common`（本例只有 2 个函数 + 2 个常量）；校验无跨分组边后按闭包生成导入。
+常量（如 `_SYSTEM_STATS_CACHE`、`_update_check_state`）跟随唯一使用它的分组，
+避免可变全局被复制成两份。
+
 **后续（未完成）**
 
 - `app/api/openai/shared.py` 仍有 1320 行：可再按「标签页解析 / 配置与覆盖项 / SSE / 工具调用」
   四块下沉，但它是四组路由的共同底座，收益低于风险，暂缓。
-- `chat.py` 2542 行：`/v1/chat/completions`、`/v1/responses`、`/v1/models` 三块可各自独立；Responses 的**状态缓存**仍是最大的耦合点，拆端点前需先把缓存下沉到 `app/services/`。
+- `chat.py` 2542 行（唯一仍超 2000 行的协议文件）：`/v1/chat/completions`、`/v1/responses`、`/v1/models` 三块可各自独立；Responses 的**状态缓存**仍是最大耦合点，拆端点前需先把缓存下沉到 `app/services/`，故单独排期。
 - `system.py` 2674 行：`/health`、`/api/settings/*`、`/api/update/*`、`/api/system/*`
   应按「探活 / 设置 / 更新 / 诊断」四组分别落到 `admin/` 与 `system/`。
 - 迁移完成后，`admin/pool.py` 里对 `tab_routes` 私有辅助的依赖可下沉到
