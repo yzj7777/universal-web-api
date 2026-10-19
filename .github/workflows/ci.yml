@@ -84,3 +84,5 @@ jobs:
       - run: uv sync --frozen
       # .env.example 是否与 settings_registry 同步、版本号是否一致、仓库卫生
       - run: uv run --no-sync pytest -q tests/test_structure.py tests/test_settings_registry.py tests/test_repo_hygiene.py tests/test_uv_environment.py
+      # 导入环棘轮：环中模块数/环数/最大纠缠分量只减不增（见 docs/plans/REFACTOR_PLAN-2026-10.md 步骤 0）
+      - run: uv run --no-sync pytest -q tests/test_import_cycle_ratchet.py tests/test_exception_ratchet.py tests/test_driver_ratchet.py
