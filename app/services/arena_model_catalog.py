@@ -526,7 +526,7 @@ def load_arena_offline_cache_models() -> List[Dict[str, Any]]:
             return []
 
         try:
-            with open(ARENA_MODELS_CACHE_PATH, "r", encoding="utf-8") as f:
+            with open(ARENA_MODELS_CACHE_PATH, encoding="utf-8") as f:
                 raw_list = json.load(f)
             if not isinstance(raw_list, list):
                 _offline_cached_models = []

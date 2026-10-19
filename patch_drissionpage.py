@@ -774,13 +774,13 @@ def ensure_stream_capture_patch(content):
 def apply_patch(filepath):
     """应用补丁"""
     content = filepath.read_text(encoding='utf-8')
-    
+
     if check_already_patched(content):
         print("✅ 已经打过补丁，无需重复操作")
         return True
 
     base_patched = has_base_patch(content)
-    
+
     # 备份原文件
     backup = filepath.with_suffix('.py.bak')
     if not backup.exists():
@@ -799,12 +799,12 @@ def apply_patch(filepath):
             "        self._reuse_driver = False\n"
             "        self._network_enabled = False"
         )
-        
+
         if old_init_end not in content:
             print("❌ 无法定位 __init__ 补丁点")
             return False
         content = content.replace(old_init_end, new_init_end, 1)
-        
+
         # ===== 补丁 2：start() 支持复用 =====
         old_start = (
             "        self._driver = Driver(self._target_id, self._address)\n"
@@ -828,12 +828,12 @@ def apply_patch(filepath):
             "        self._set_callback()\n"
             "        self.listening = True"
         )
-        
+
         if old_start not in content:
             print("❌ 无法定位 start() 补丁点")
             return False
         content = content.replace(old_start, new_start, 1)
-        
+
         # ===== 补丁 3：stop() 复用模式不关闭连接 =====
         old_stop = (
             "    def stop(self):\n"
@@ -862,12 +862,12 @@ def apply_patch(filepath):
             "                self._driver.stop()\n"
             "                self._driver = None"
         )
-        
+
         if old_stop not in content:
             print("❌ 无法定位 stop() 补丁点")
             return False
         content = content.replace(old_stop, new_stop, 1)
-        
+
         # ===== 补丁 4：_to_target() 兼容复用模式 =====
         old_to_target = (
             "    def _to_target(self, target_id, address, owner):\n"
@@ -908,7 +908,7 @@ def apply_patch(filepath):
             "                self._driver.run('Network.enable')\n"
             "            self._set_callback()"
         )
-        
+
         if old_to_target not in content:
             print("⚠️ 无法定位 _to_target() 补丁点（非关键，跳过）")
         else:
@@ -950,17 +950,17 @@ def restore(filepath):
 
 def main():
     import sys
-    
+
     filepath = find_listener_file()
     if not filepath:
         return
-    
+
     print(f"📍 Listener 源码: {filepath}")
-    
+
     if len(sys.argv) > 1 and sys.argv[1] == '--restore':
         restore(filepath)
         return
-    
+
     if apply_patch(filepath):
         print("\n🎉 补丁完成！")
         print("   恢复命令: python patch_drissionpage.py --restore")

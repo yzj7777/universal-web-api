@@ -52,7 +52,7 @@ def _load_env_config_from_file() -> Dict[str, Any]:
     if not env_path.exists():
         return config
 
-    with open(env_path, "r", encoding="utf-8") as f:
+    with open(env_path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
 

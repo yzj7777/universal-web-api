@@ -997,7 +997,7 @@ class BrowserMediaMixin:
                     return []
                 time.sleep(step)
                 elapsed += step
-        
+
         finder = ElementFinder(tab)
         fallback_stream_media_items = self._dedupe_media_items(
             [dict(item) for item in (stream_media_items or []) if isinstance(item, dict)]
@@ -1075,7 +1075,7 @@ class BrowserMediaMixin:
                 f"policy={policy}, signal_seen={signal_seen}"
             )
             return False
-        
+
         try:
             quick_probe_timeout = self._media_quick_probe_timeout(image_config, default=1.0)
             elements, container_mode = _find_candidate_elements(timeout=quick_probe_timeout)
@@ -1099,7 +1099,7 @@ class BrowserMediaMixin:
                     logger.debug("结果容器为空，直接回退到网络流媒体结果")
                     return list(fallback_stream_media_items)
                 return []
-            
+
             def _select_target_element(candidates):
                 if not candidates:
                     return None
@@ -1697,7 +1697,7 @@ class BrowserMediaMixin:
                 if captured_audio_items:
                     ready_media_items = self._dedupe_media_items(list(ready_media_items) + captured_audio_items)
                     audio_items = [item for item in ready_media_items if item.get("media_type") == "audio"]
-            
+
             media_items = ready_media_items
 
             try:
@@ -1743,7 +1743,7 @@ class BrowserMediaMixin:
             )
 
             return media_items
-            
+
         except Exception as e:
             logger.warning(f"多模态提取异常: {e}")
             return []
@@ -3007,7 +3007,7 @@ class BrowserMediaMixin:
     def _download_url_images(self, images: List[Dict], tab=None) -> List[Dict]:
         """
         在浏览器内通过 Canvas 压缩图片，保存到本地并返回可访问 URL
-        
+
         流程：
         1. 浏览器 Canvas 压缩 → base64
         2. 后端解码 → 保存到 download_images/
@@ -3017,9 +3017,9 @@ class BrowserMediaMixin:
         import uuid
         from pathlib import Path
         from datetime import datetime
-        
+
         result = []
-        
+
         # 确保目录存在
         save_dir = paths.download_dir()
         canvas_image_max_size = AppConfig.get_canvas_image_max_size()
@@ -3029,16 +3029,16 @@ class BrowserMediaMixin:
             if img.get('kind') != 'url':
                 result.append(img)
                 continue
-            
+
             url = img.get('url')
             if not url:
                 result.append(img)
                 continue
-            
+
             if not tab:
                 result.append(img)
                 continue
-            
+
             try:
                 # 🔑 在浏览器中用 Canvas 加载并压缩图片
                 js_code = """
@@ -3053,7 +3053,7 @@ class BrowserMediaMixin:
                                 const MAX_SIZE = Math.max(1, Math.floor(Number(configuredMaxSize) || 1024));
                                 let width = img.naturalWidth;
                                 let height = img.naturalHeight;
-                                
+
                                 if (width > MAX_SIZE || height > MAX_SIZE) {
                                     if (width > height) {
                                         height = Math.round(height * MAX_SIZE / width);
@@ -3063,17 +3063,17 @@ class BrowserMediaMixin:
                                         height = MAX_SIZE;
                                     }
                                 }
-                                
+
                                 const canvas = document.createElement('canvas');
                                 canvas.width = width;
                                 canvas.height = height;
-                                
+
                                 const ctx = canvas.getContext('2d');
                                 ctx.drawImage(img, 0, 0, width, height);
-                                
+
                                 // 转为 JPEG
                                 const dataUri = canvas.toDataURL('image/jpeg', 0.85);
-                                
+
                                 resolve({
                                     success: true,
                                     dataUri: dataUri,
@@ -3084,17 +3084,17 @@ class BrowserMediaMixin:
                                 resolve({ success: false, error: 'Canvas: ' + e.message });
                             }
                         };
-                        
+
                         img.onerror = function() {
                             resolve({ success: false, error: 'Load failed' });
                         };
-                        
+
                         setTimeout(() => resolve({ success: false, error: 'Timeout' }), 15000);
                         img.src = imageUrl;
                     });
                 })(arguments[0], arguments[1]);
                 """
-                
+
                 # ===== PROBE: 验证 run_js 是否等待 Promise，并检查图片/Fetch 可用性 =====
                 probe_js = """
                 (function(u){
@@ -3161,10 +3161,10 @@ class BrowserMediaMixin:
 
                 download_result = driver_for_tab(tab).run_js(js_code, url, canvas_image_max_size)
 
-                logger.info(f"[PROBE_JS] canvas_result_type={type(download_result).__name__}, value={str(download_result)[:300]}")                
+                logger.info(f"[PROBE_JS] canvas_result_type={type(download_result).__name__}, value={str(download_result)[:300]}")
                 if download_result and download_result.get('success'):
                     data_uri = download_result['dataUri']
-                    
+
                     # 解析 base64
                     # 格式: data:image/jpeg;base64,/9j/4AAQSkZJRg...
                     if ',' in data_uri:
@@ -3175,7 +3175,7 @@ class BrowserMediaMixin:
                             ext = '.png'
                         else:
                             ext = '.jpg'
-                        
+
                         # 解码并保存
                         compact_b64 = "".join(str(b64_data or "").split())
                         estimated_size = self._estimate_base64_decoded_size(compact_b64)
@@ -3184,20 +3184,20 @@ class BrowserMediaMixin:
                         image_bytes = base64.b64decode(compact_b64)
                         if len(image_bytes) > max_canvas_image_bytes:
                             raise ValueError(f"canvas_image_too_large:{len(image_bytes)}")
-                        
+
                         # 生成唯一文件名
                         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                         unique_id = uuid.uuid4().hex[:8]
                         filename = f"{timestamp}_{unique_id}{ext}"
                         filepath = save_dir / filename
-                        
+
                         # 写入文件
                         with open(filepath, 'wb') as f:
                             f.write(image_bytes)
-                        
+
                         # 构建可访问的 URL
                         accessible_url = f"/download_images/{filename}"
-                        
+
                         new_img = img.copy()
                         new_img['kind'] = 'url'
                         new_img['url'] = accessible_url
@@ -3208,18 +3208,18 @@ class BrowserMediaMixin:
                         new_img['byte_size'] = len(image_bytes)
                         new_img['source'] = 'local_file'
                         new_img['local_path'] = str(filepath)
-                        
+
                         result.append(new_img)
                         logger.info(f"✅ 图片已保存: {filename} ({len(image_bytes)} bytes)")
                         continue
-                
+
                 error_msg = download_result.get('error', 'Unknown') if download_result else 'No result'
                 logger.warning(f"⚠️ 图片处理失败: {error_msg}")
-            
+
             except Exception as e:
                 logger.warning(f"⚠️ 图片保存异常: {str(e)[:100]}")
-            
+
             # 失败时保留原 URL
             result.append(img)
-        
+
         return result

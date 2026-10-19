@@ -195,7 +195,7 @@ def load_update_preserve_settings(settings_path: Path | None = None) -> Dict[str
 
     if path.exists():
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 data = json.load(f)
             selected = normalize_update_preserve_patterns(data.get("selected_patterns", []))
         except Exception:

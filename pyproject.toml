@@ -104,5 +104,35 @@ extend-exclude = [
 ]
 
 [tool.ruff.lint]
-# 最小基线：只启用“出现即是 bug”的规则（语法错误、未定义名称、比较/断言误用等），风格类规则暂不启用。
-select = ["E9", "F63", "F7", "F82", "F404"]
+# 分档启用，随重构进度逐步收紧（见 docs/plans/REFACTOR_PLAN-2026-10.md）。
+#
+# 第一档（已启用）：出现即是 bug 的规则 + 纯机械的卫生规则。
+#   E9/F63/F7/F82/F404  语法错误、未定义名称、比较/断言误用
+#   F401/F841           未使用的导入 / 未使用的局部变量
+#   I                   import 排序（isort 规则）
+#   W291/W293/W292      行尾空白、空行含空白、文件末尾缺换行
+#   E701/E702           一行多语句（冒号 / 分号）
+#   RUF100              无用的 noqa
+#   UP015/RUF010        冗余 open 模式、多余的 f-string 类型转换
+#
+# 暂未启用（有意为之，见计划）：
+#   PLC0415 函数内 import（690 处）——随导入环棘轮自然下降，不能单独强推
+#   T201 print（app/ 内 78 处）——需逐个改成 logger，单独一步
+#   B904 raise-without-from（99 处）——影响异常链可观测性，优先级高于风格类
+select = [
+    "E9", "F63", "F7", "F82", "F404",
+    "F401", "F841",
+    "I",
+    "W291", "W293", "W292",
+    "E701", "E702",
+    "RUF100", "UP015", "RUF010",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# 包 __init__.py 的“未使用导入”通常是刻意再导出，删掉会破坏对外 API。
+"__init__.py" = ["F401"]
+# 以下三个是兼容门面，职责就是再导出；收窄导出面属于重构步骤 5，此处先不误伤。
+"app/core/config.py" = ["F401"]
+"app/core/tab_pool.py" = ["F401"]
+"app/services/config/engine.py" = ["F401"]
+"app/api/system/__init__.py" = ["F401"]

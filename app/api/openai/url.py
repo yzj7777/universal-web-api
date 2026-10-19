@@ -709,7 +709,7 @@ async def _stream_with_route_domain(
         runtime.request_manager.capture_error(ctx, e, code="internal_error")
         ctx.mark_failed(str(getattr(e, "code", None) or e))
         done_emitted = True
-        yield _pack_error(f"执行错误: {str(e)}", "internal_error")
+        yield _pack_error(f"执行错误: {e!s}", "internal_error")
         yield _pack_done()
 
     finally:

@@ -316,7 +316,7 @@ def _read_browser_config() -> Dict[str, Any]:
     config_path = Path("config/browser_config.json")
     if not config_path.exists():
         return {}
-    with open(config_path, "r", encoding="utf-8-sig") as f:
+    with open(config_path, encoding="utf-8-sig") as f:
         return json.load(f)
 
 
@@ -517,7 +517,7 @@ def _get_legacy_model_name_overrides_from_config(config: Optional[Dict[str, Any]
 def _read_model_name_overrides_unlocked() -> Dict[str, Dict[str, str]]:
     if MODEL_NAME_OVERRIDES_PATH.exists():
         try:
-            with open(MODEL_NAME_OVERRIDES_PATH, "r", encoding="utf-8-sig") as f:
+            with open(MODEL_NAME_OVERRIDES_PATH, encoding="utf-8-sig") as f:
                 return _normalize_model_name_overrides(json.load(f))
         except Exception as e:
             logger.warning(f"读取模型显示名称本地配置失败: {e}")
@@ -588,7 +588,7 @@ def _get_legacy_preset_overrides_from_config(config: Optional[Dict[str, Any]] = 
 def _read_preset_overrides_unlocked() -> Dict[str, Dict[str, str]]:
     if PRESET_OVERRIDES_PATH.exists():
         try:
-            with open(PRESET_OVERRIDES_PATH, "r", encoding="utf-8-sig") as f:
+            with open(PRESET_OVERRIDES_PATH, encoding="utf-8-sig") as f:
                 return _normalize_preset_overrides(json.load(f))
         except Exception as e:
             logger.warning(f"读取预设本地配置失败: {e}")

@@ -304,7 +304,7 @@ def resolve_error_metadata(
                 }
                 detected_status = _extract_status_code_from_text(raw_str) or _parse_int(nested_error.get("status_code"), 400)
                 is_retryable = detected_status >= 500 and extracted_code not in {"moderation_blocked", "content_policy_violation"}
-                
+
                 return ErrorMetadata(
                     code=extracted_code or "upstream_error",
                     message=extracted_msg or raw_str or (default_message or "上游服务报错"),

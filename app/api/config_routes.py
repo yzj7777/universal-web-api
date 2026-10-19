@@ -765,7 +765,7 @@ async def inject_workflow_editor(
         except Exception as e:
             return JSONResponse(
                 status_code=503,
-                content={"success": False, "message": f"无法获取标签页: {str(e)}"}
+                content={"success": False, "message": f"无法获取标签页: {e!s}"}
             )
 
         url = tab.url or ""

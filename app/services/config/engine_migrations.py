@@ -29,7 +29,7 @@ class ConfigMigrationsMixin:
             return []
 
         try:
-            with open(commands_file, "r", encoding="utf-8") as f:
+            with open(commands_file, encoding="utf-8") as f:
                 data = json.load(f)
 
             if isinstance(data, dict):

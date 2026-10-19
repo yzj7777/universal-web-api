@@ -724,13 +724,13 @@ class WorkflowExecutorActionMixin:
                 return
             time.sleep(min(step, total_delay - elapsed))
             elapsed += step
-    
+
     # ================= 隐身模式辅助方法 =================
-    
+
     def _idle_wait(self, duration: float):
         """
         带微漂移的空闲等待（隐身模式专用）
-        
+
         如果有已知鼠标位置，等待期间产生微小漂移事件；
         否则退化为纯 sleep（仍可中断）。
         """
@@ -749,25 +749,25 @@ class WorkflowExecutorActionMixin:
                     return
                 time.sleep(min(step, duration - elapsed))
                 elapsed += step
-    
+
     def _stealth_move_to_element(self, ele):
         """
         隐身模式下平滑移动鼠标到元素附近
-        
+
         通过 DrissionPage 原生属性获取坐标，不注入 JS。
         如果坐标获取失败，跳过移动（后续 click 自带定位）。
         """
         if self._mouse_pos is None:
             return
-        
+
         target = self._get_element_viewport_pos(ele)
         if target is None:
             return
-        
+
         # 随机偏移（不精确命中中心）
         tx = target[0] + random.randint(-8, 8)
         ty = target[1] + random.randint(-5, 5)
-        
+
         try:
             self._mouse_pos = smooth_move_mouse(
                 tab=self.tab,
@@ -777,34 +777,34 @@ class WorkflowExecutorActionMixin:
             )
         except Exception as e:
             logger.debug(f"[STEALTH] 平滑移动异常（可忽略）: {e}")
-    
+
     def _get_element_viewport_pos(self, ele) -> Optional[tuple]:
         """
         获取元素视口坐标（不注入 JS）
-        
+
         依次尝试多种 DrissionPage 原生属性。
         对于可见的固定位置元素（如聊天输入框），
         页面坐标近似等于视口坐标。
         """
         try:
             r = ele.rect
-            
+
             # 尝试 viewport 相关属性
             for attr in ('viewport_midpoint', 'viewport_click_point'):
                 pos = getattr(r, attr, None)
                 if pos and len(pos) >= 2:
                     return (int(pos[0]), int(pos[1]))
-            
+
             # midpoint（页面坐标，对可见元素近似视口坐标）
             pos = getattr(r, 'midpoint', None)
             if pos and len(pos) >= 2:
                 return (int(pos[0]), int(pos[1]))
-            
+
             # click_point
             pos = getattr(r, 'click_point', None)
             if pos and len(pos) >= 2:
                 return (int(pos[0]), int(pos[1]))
-            
+
             # location + size 计算中心
             loc = getattr(r, 'location', None)
             size = getattr(r, 'size', None)
@@ -856,9 +856,9 @@ class WorkflowExecutorActionMixin:
                     "[STEALTH_CLICK] CDP BoxModel 坐标获取失败: "
                     f"backend={backend_id}, error={self._compact_log_value(exc, 160)}"
                 )
-        
+
         return None
-    
+
     def _get_viewport_size(self) -> tuple:
         """获取视口尺寸（不注入 JS）"""
         try:
@@ -1173,7 +1173,7 @@ class WorkflowExecutorActionMixin:
             f"point=({x}, {y}), result={self._compact_log_value(result, 180)}"
         )
         return False
-    
+
     # ================= 步骤执行 =================
 
     @staticmethod
@@ -1707,7 +1707,7 @@ class WorkflowExecutorActionMixin:
                             f"[CLICK:SEND_BTN] 开始点击发送按钮, 当前 URL: {send_url}, "
                             f"发送前输入框长度: {before_len}, selector={selector!r}"
                         )
-                        
+
                         expected_len = 0
                         if isinstance(getattr(self, "_context", None), dict):
                             expected_len = len(str(self._context.get("prompt", "") or ""))
@@ -1806,7 +1806,7 @@ class WorkflowExecutorActionMixin:
             )
             self._execute_keypress("Enter")
             return True
-        
+
         elif not optional:
             tutorial_url = get_tutorial_selectors_url()
             logger.warning(
@@ -2132,11 +2132,11 @@ class WorkflowExecutorActionMixin:
             to_pos=(end_x, end_y),
             check_cancelled=self._check_cancelled
         )
-    
+
     def _stealth_click_element(self, ele, target_key: str = "", selector: str = ""):
         """
         隐身模式人类化点击（v5.9 — 彻底消灭 ele.click() 降级路径）
-        
+
         关键：
         - 所有路径均使用 cdp_precise_click（force=0.5），绝不降级到 ele.click()
         - 坐标仅走原生属性链路，失败即抛错，不执行页面 JS 坐标注入
@@ -2149,7 +2149,7 @@ class WorkflowExecutorActionMixin:
         target_label = target_key or "-"
         selector_label = self._compact_log_value(selector, 100)
         element_label = self._describe_element_for_log(ele)
-        
+
         # 1. 获取元素坐标（多重尝试）
         target = self._get_element_viewport_pos(ele)
         if target is None:
@@ -2160,7 +2160,7 @@ class WorkflowExecutorActionMixin:
             )
             raise Exception("[STEALTH] 无法通过原生链路获取元素坐标，拒绝注入 JS 与 ele.click() 降级")
         target_ready_at = time.perf_counter()
-        
+
         # 二维高斯落点：中心密集、边缘稀疏，更接近人类点击热力图
         sigma_x = 3.0
         sigma_y = 2.0
@@ -2168,7 +2168,7 @@ class WorkflowExecutorActionMixin:
         click_y = target[1] + int(random.gauss(0, sigma_y))
         click_x = max(target[0] - 8, min(target[0] + 8, click_x))
         click_y = max(target[1] - 6, min(target[1] + 6, click_y))
-        
+
         # 2. 平滑移动鼠标到目标
         if self._mouse_pos is not None:
             self._mouse_pos = smooth_move_mouse(
@@ -2182,10 +2182,10 @@ class WorkflowExecutorActionMixin:
             _dispatch_mouse_move(self.tab, click_x, click_y)
             self._mouse_pos = (click_x, click_y)
         move_finished_at = time.perf_counter()
-        
+
         if self._check_cancelled():
             return
-        
+
         # 3. 极短停顿/微漂移，让点击衔接自然但不拖节奏
         if random.random() < 0.6:
             self._mouse_pos = idle_drift(
@@ -2206,7 +2206,7 @@ class WorkflowExecutorActionMixin:
         hesitation = random.lognormvariate(math.log(0.15), 0.4)
         hesitation = max(0.06, min(hesitation, 0.4))
         self._idle_wait(hesitation)
-        
+
         # 4. 精确 CDP 点击（含 force=0.5 修复）
         success = cdp_precise_click(
             tab=self.tab,
@@ -2214,7 +2214,7 @@ class WorkflowExecutorActionMixin:
             y=click_y,
             check_cancelled=self._check_cancelled
         )
-        
+
         if not success:
             # 🔴 CDP 点击失败也不降级到 ele.click()，而是重试一次
             logger.warning(
@@ -2246,7 +2246,7 @@ class WorkflowExecutorActionMixin:
                     "[STEALTH] CDP 精确点击两次均失败 "
                     f"(target={target_label}, click=({click_x},{click_y}))"
                 )
-        
+
         # 更新鼠标位置
         self._mouse_pos = (click_x, click_y)
         click_finished_at = time.perf_counter()
@@ -2263,13 +2263,13 @@ class WorkflowExecutorActionMixin:
                 f"click={click_elapsed:.2f}s, total={total_elapsed:.2f}s, "
                 f"target=({target[0]}, {target[1]}), click=({click_x}, {click_y}))"
             )
-        
+
         logger.debug(
             "[STEALTH_CLICK] 完成: "
             f"target={target_label}, click=({click_x},{click_y}), "
             f"target_center=({target[0]},{target[1]}), total={total_elapsed:.2f}s"
         )
-    
+
     # ================= 可靠发送 =================
 
     def _safe_get_input_len_by_key(self, target_key: str) -> int:
@@ -2306,7 +2306,7 @@ class WorkflowExecutorActionMixin:
             return 0
         except Exception:
             return 0
-    
+
     def _is_send_success(self, before_len: int, after_len: int) -> bool:
         """判断是否发送成功"""
         try:
@@ -2433,7 +2433,7 @@ class WorkflowExecutorActionMixin:
         raise WorkflowError("send_unconfirmed")
 
     # ================= 隐身模式页面预热 =================
-    
+
     def _warmup_page_for_stealth(self):
         """
         页面预热（极速简化版）
@@ -2445,44 +2445,44 @@ class WorkflowExecutorActionMixin:
 
         try:
             from app.utils.human_mouse import _dispatch_mouse_move
-            
+
             vw, vh = self._get_viewport_size()
-            
+
             # 初始化鼠标位置（视口中上部，模拟"刚把鼠标放到页面"）
             init_x = vw // 2 + random.randint(-80, 80)
             init_y = int(vh * 0.3) + random.randint(-40, 40)
             self._mouse_pos = (init_x, init_y)
             _dispatch_mouse_move(self.tab, init_x, init_y)
-            
+
             # 仅保留极短缓冲，避免首个动作过于生硬
             self._idle_wait(random.uniform(0.08, 0.18))
-            
+
             if self._check_cancelled():
                 return
-            
+
             # 最多一次轻微修正，保持动作连贯
             move_count = 1 if random.random() < 0.45 else 0
             for i in range(move_count):
                 if self._check_cancelled():
                     return
-                
+
                 # 小幅移动（仅做起手姿态修正）
                 dx = random.randint(-int(vw * 0.08), int(vw * 0.08))
                 dy = random.randint(-int(vh * 0.06), int(vh * 0.06))
                 target_x = max(50, min(vw - 50, self._mouse_pos[0] + dx))
                 target_y = max(50, min(vh - 50, self._mouse_pos[1] + dy))
-                
+
                 self._mouse_pos = smooth_move_mouse(
                     tab=self.tab,
                     from_pos=self._mouse_pos,
                     to_pos=(target_x, target_y),
                     check_cancelled=self._check_cancelled
                 )
-                
+
                 self._idle_wait(random.uniform(0.04, 0.10))
 
             self._idle_wait(random.uniform(0.05, 0.12))
-            
+
             logger.debug(
                 "[STEALTH] 页面预热完成: "
                 f"moves={move_count}, origin=({init_x},{init_y}), "
@@ -2687,9 +2687,9 @@ class WorkflowExecutorActionMixin:
             f"timeout={timeout:.1f}s"
         )
         raise WorkflowError("new_chat_transition_timeout")
-    
+
     # ================= 输入框填充 =================
-    
+
     def _execute_fill(self, selector: str, text: str, target_key: str, optional: bool):
         """填充输入框（v5.7 隐身增强版）"""
         if self._check_cancelled():
@@ -2778,7 +2778,7 @@ class WorkflowExecutorActionMixin:
                 f"[FILL_INPUT:DONE] 填充输入框完成: target={target_key!r}, "
                 f"filled_len={len(text)}, actual_dom_len={actual_dom_len}"
             )
-        
+
         # ===== 隐身模式：粘贴后仅保留极短缓冲，避免节奏被故意拖慢 =====
         if self.stealth_mode and len(text) > 0:
             base_delay = random.uniform(0.10, 0.22)

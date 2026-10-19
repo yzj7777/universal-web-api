@@ -10,6 +10,6 @@ from app.utils.paste import (
 
 __all__ = [
     'safe_universal_paste',
-    'clear_and_paste', 
+    'clear_and_paste',
     'UNIVERSAL_INSERT_JS',
 ]

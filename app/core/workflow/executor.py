@@ -1240,7 +1240,7 @@ class WorkflowExecutor(
                 logger.info(f"[Executor] step cancelled after element lookup failure [{action}]: {e}")
                 return
             if not optional:
-                yield self.formatter.pack_error(f"元素未找到: {str(e)}")
+                yield self.formatter.pack_error(f"元素未找到: {e!s}")
                 raise
 
         except ArenaImageGenerationError:
@@ -1314,7 +1314,7 @@ class WorkflowExecutor(
                 return
             logger.error(f"步骤执行失败 [{action}]: {e}")
             if not optional:
-                yield self.formatter.pack_error(f"执行失败: {str(e)}")
+                yield self.formatter.pack_error(f"执行失败: {e!s}")
                 raise
         finally:
             self._current_step_execution = previous_step_execution

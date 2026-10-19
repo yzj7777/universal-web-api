@@ -618,7 +618,7 @@ def _run_selector_test(
         return result
 
     except BrowserConnectionError as e:
-        return {"success": False, "count": 0, "message": f"浏览器未连接: {str(e)}"}
+        return {"success": False, "count": 0, "message": f"浏览器未连接: {e!s}"}
 
     except Exception as e:
         logger.error(f"测试选择器失败: {e}")

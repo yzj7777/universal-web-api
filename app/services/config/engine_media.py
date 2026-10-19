@@ -548,10 +548,10 @@ class ConfigMediaMixin:
             # 限制长度，避免过长的引导文本
             hint_val = val[:500] if val else ""
             result["hint_text"] = hint_val
-            
+
             # 智能向后兼容：结合老配置的策略类型，防止新字段被无关的旧数据污染
             old_temp_type = config.get("temp_file_type", "txt")
-            
+
             if "txt_hint_text" not in config:
                 result["txt_hint_text"] = hint_val if old_temp_type == "txt" else "完全专注于文件内容"
             if "pdf_hint_text" not in config:

@@ -211,7 +211,7 @@ async def get_releases(
         return {"releases": result, "current_version": current_version, "update_check": update_check}
     except Exception as e:
         logger.error(f"获取 Release 列表失败: {e}")
-        raise HTTPException(status_code=500, detail=f"获取失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"获取失败: {e!s}")
 
 
 @router.post("/api/update/switch")

@@ -68,11 +68,11 @@ class _GlobalNetworkInterceptionManager:
     ) -> Callable[[], None]:
         """
         注册全局网络响应观察者。
-        
+
         Args:
             pattern_or_filter: 匹配规则。可为 URL 匹配子串、Callable[[event_dict], bool] 或 None（匹配全部）。
             callback: 响应处理回调，签名 (session, response, event, stop_event) -> None。
-            
+
         Returns:
             注销函数。
         """

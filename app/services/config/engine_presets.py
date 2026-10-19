@@ -461,14 +461,14 @@ class ConfigPresetsMixin:
         from app.utils.site_url import extract_remote_site_domain
         import json
         try:
-            with open(config_path, "r", encoding="utf-8-sig") as f:
+            with open(config_path, encoding="utf-8-sig") as f:
                 payload = json.load(f)
             if not isinstance(payload, dict):
                 return 0
             urls = payload.get("urls", {})
             if not isinstance(urls, dict):
                 return 0
-            
+
             domain_norm = str(domain or "").strip().lower()
             changed = 0
             keys_to_delete = []
@@ -485,7 +485,7 @@ class ConfigPresetsMixin:
                         changed += 1
             for k in keys_to_delete:
                 urls.pop(k, None)
-            
+
             if changed > 0:
                 from app.core.config import atomic_write_json
                 atomic_write_json(config_path, payload)

@@ -41,7 +41,7 @@ class CommandEngineStoreMixin:
 
         if os.path.exists(commands_file):
             try:
-                with open(commands_file, "r", encoding="utf-8-sig") as f:
+                with open(commands_file, encoding="utf-8-sig") as f:
                     data = json.load(f)
 
                 if isinstance(data, dict):
@@ -70,7 +70,7 @@ class CommandEngineStoreMixin:
             return []
 
         try:
-            with open(local_file, "r", encoding="utf-8-sig") as f:
+            with open(local_file, encoding="utf-8-sig") as f:
                 data = json.load(f)
 
             self._commands_local_mtime = os.path.getmtime(local_file)

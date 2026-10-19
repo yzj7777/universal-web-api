@@ -474,7 +474,7 @@ class BrowserWorkflowMixin:
         )
 
     def execute_workflow(
-        self, 
+        self,
         messages: List[Dict],
         stream: bool = True,
         task_id: str = None,
@@ -486,13 +486,13 @@ class BrowserWorkflowMixin:
     ) -> Generator[str, None, None]:
         """
         工作流执行入口（v2.0 改进版）
-        
+
         改动：
         - 自动从池中获取标签页
         - 执行完自动释放
         """
         is_valid, error_msg, sanitized_messages = MessageValidator.validate(messages)
-        
+
         if not is_valid:
             yield self.formatter.pack_error(
                 f"无效请求: {error_msg}",
@@ -500,15 +500,15 @@ class BrowserWorkflowMixin:
                 code="invalid_messages"
             )
             return
-        
+
         if task_id is None:
             task_id = f"task_{time.time_ns()}"
         effective_stop_checker = stop_checker or self._should_stop_checker
-        
+
         session = None
         try:
             session = self.tab_pool.acquire(task_id, timeout=60)
-            
+
             if session is None and self._acquire_rejected_queue_full(task_id):
                 yield self._pack_acquire_queue_full_error()
                 yield self.formatter.pack_finish()
@@ -528,7 +528,7 @@ class BrowserWorkflowMixin:
                 task_id,
                 effective_stop_checker,
             )
-             
+
             if stream:
                 yield from self._execute_workflow_stream(
                     session,
@@ -549,7 +549,7 @@ class BrowserWorkflowMixin:
                     requested_model=requested_model,
                     **({"workflow_variables": workflow_variables} if workflow_variables else {}),
                 )
-        
+
         finally:
             if session:
                 self._release_workflow_session(
@@ -564,7 +564,7 @@ class BrowserWorkflowMixin:
                     pass
 
     def execute_workflow_for_tab_index(
-        self, 
+        self,
         tab_index: int,
         messages: List[Dict],
         stream: bool = True,
@@ -578,7 +578,7 @@ class BrowserWorkflowMixin:
     ) -> Generator[str, None, None]:
         """使用指定编号的标签页执行工作流"""
         is_valid, error_msg, sanitized_messages = MessageValidator.validate(messages)
-        
+
         if not is_valid:
             yield self.formatter.pack_error(
                 f"无效请求: {error_msg}",
@@ -586,15 +586,15 @@ class BrowserWorkflowMixin:
                 code="invalid_messages"
             )
             return
-        
+
         if task_id is None:
             task_id = f"tab{tab_index}_{time.time_ns()}"
         effective_stop_checker = stop_checker or self._should_stop_checker
-        
+
         session = None
         try:
             session = self.tab_pool.acquire_by_index(tab_index, task_id, timeout=60)
-            
+
             if session is None and self._acquire_rejected_queue_full(task_id):
                 yield self._pack_acquire_queue_full_error()
                 yield self.formatter.pack_finish()
@@ -614,7 +614,7 @@ class BrowserWorkflowMixin:
                 task_id,
                 effective_stop_checker,
             )
-             
+
             if stream:
                 yield from self._execute_workflow_stream(
                     session,
@@ -637,7 +637,7 @@ class BrowserWorkflowMixin:
                     requested_model=requested_model,
                     **({"workflow_variables": workflow_variables} if workflow_variables else {}),
                 )
-        
+
         finally:
             if session:
                 self._release_workflow_session(
@@ -1612,12 +1612,12 @@ class BrowserWorkflowMixin:
             )
         except Exception:
             workflow_priority_value = 2
-    
+
         if effective_stop_checker():
             yield self.formatter.pack_error("请求已取消", code="cancelled")
             yield self.formatter.pack_finish()
             return
-    
+
         try:
             url = tab.url
         except Exception as e:
@@ -1629,7 +1629,7 @@ class BrowserWorkflowMixin:
             )
             yield self.formatter.pack_finish()
             return
-    
+
         if not url:
             yield self.formatter.pack_error(
                 "请先打开目标AI网站",
@@ -1637,7 +1637,7 @@ class BrowserWorkflowMixin:
             )
             yield self.formatter.pack_finish()
             return
-    
+
         invalid_urls = ("about:blank", "chrome://newtab/", "chrome://new-tab-page/")
         if url in invalid_urls:
             yield self.formatter.pack_error(
@@ -1646,7 +1646,7 @@ class BrowserWorkflowMixin:
             )
             yield self.formatter.pack_finish()
             return
-    
+
         if "chrome-error://" in url or "about:neterror" in url:
             yield self.formatter.pack_error(
                 "页面加载错误，请刷新后重试",
@@ -1654,7 +1654,7 @@ class BrowserWorkflowMixin:
             )
             yield self.formatter.pack_finish()
             return
-    
+
         try:
             domain = extract_remote_site_domain(url)
             if not domain:
@@ -1668,7 +1668,7 @@ class BrowserWorkflowMixin:
             )
             yield self.formatter.pack_finish()
             return
-    
+
         tab_url = getattr(tab, "url", "")
         tab_id = getattr(tab, "tab_id", "")
         logger.info(
@@ -1676,7 +1676,7 @@ class BrowserWorkflowMixin:
             f"domain={domain!r}, current_url={tab_url!r}, requested_model={requested_model!r}, "
             f"preset={preset_name!r}, session_preset={session.preset_name!r}"
         )
-        
+
         page_status = self._check_page_status(tab)
         if not page_status["ready"]:
             yield self.formatter.pack_error(
@@ -1685,7 +1685,7 @@ class BrowserWorkflowMixin:
             )
             yield self.formatter.pack_finish()
             return
-        
+
         config_engine = self._get_config_engine()
         effective_preset_name = preset_name if preset_name is not None else session.preset_name
 
@@ -1706,7 +1706,7 @@ class BrowserWorkflowMixin:
             )
             yield self.formatter.pack_finish()
             return
-        
+
         selectors = site_config.get("selectors", {})
         setattr(
             session,
@@ -1834,7 +1834,7 @@ class BrowserWorkflowMixin:
                 f"[{session.id}] 本轮将新建对话: domain={domain}, "
                 f"preset={resolved_preset_name}, threshold={conversation_threshold}s"
             )
-        
+
         image_config = dict(site_config.get("image_extraction", {}) or {})
         modalities = image_config.get("modalities") or {}
         image_extraction_enabled = bool(image_config.get("enabled", False)) or any(
@@ -2034,7 +2034,7 @@ class BrowserWorkflowMixin:
                 site_catalog_fallback if isinstance(site_catalog_fallback, dict) else {}
             ),
         }
-        
+
         extractor = config_engine.get_site_extractor(domain, preset_name=effective_preset_name)
         site_advanced_config = config_engine.get_site_advanced_config(
             domain,
@@ -2081,7 +2081,7 @@ class BrowserWorkflowMixin:
                 setattr(session, "_workflow_stop_reason", "command_interrupt")
                 return True
             return False
-        
+
         executor = WorkflowExecutor(
             tab=tab,
             stealth_mode=stealth_mode,
@@ -2102,7 +2102,7 @@ class BrowserWorkflowMixin:
             executor._begin_workflow_scripts()
         except Exception as e:
             logger.debug(f"[{session.id}] 工作流脚本边界初始化失败（忽略）: {e}")
-        
+
         result_container_selector = selectors.get("result_container", "")
         setattr(session, "_workflow_stop_reason", None)
         if not effective_stop_checker():
@@ -2113,7 +2113,7 @@ class BrowserWorkflowMixin:
         media_dom_baseline_captured = False
         arena_result_baseline_captured = False
         flow_program = None
-        
+
         try:
             with executor.workflow_execution_scope():
                 if has_control_flow(workflow) or workflow_variables:
@@ -2569,7 +2569,7 @@ class BrowserWorkflowMixin:
                                 )
                                 break
                         if not optional:
-                            yield self.formatter.pack_error(f"执行中断: {str(e)}")
+                            yield self.formatter.pack_error(f"执行中断: {e!s}")
                             break
 
             if (
@@ -2731,7 +2731,7 @@ class BrowserWorkflowMixin:
                                         valid_stream_images,
                                         image_config,
                                     )
-                    
+
                     if media_items:
                         download_urls = image_config.get("download_urls", False)
                         if download_urls:
@@ -2810,11 +2810,11 @@ class BrowserWorkflowMixin:
                     )
                 except Exception as e:
                     logger.warning(f"[{session.id}] 多模态提取失败: {e}")
-        
+
         except Exception as e:
             if not (effective_stop_checker()):
                 logger.error(f"[{session.id}] 工作流执行异常: {e}", exc_info=True)
-                yield self.formatter.pack_error(f"系统错误: {str(e)}")
+                yield self.formatter.pack_error(f"系统错误: {e!s}")
         finally:
             if flow_program is not None:
                 try:
@@ -2845,7 +2845,7 @@ class BrowserWorkflowMixin:
         yield self.formatter.pack_finish()
 
     def _execute_workflow_non_stream(
-        self, 
+        self,
         session: TabSession,
         messages: List[Dict],
         preset_name: Optional[str] = None,
@@ -2859,7 +2859,7 @@ class BrowserWorkflowMixin:
         collected_content = []
         collected_media = []
         error_data = None
-        
+
         stream = self._execute_workflow_stream(
             session,
             messages,
@@ -2875,14 +2875,14 @@ class BrowserWorkflowMixin:
             for chunk in stream:
                 if chunk.startswith("data: [DONE]"):
                     continue
-                
+
                 if chunk.startswith("data: "):
                     try:
                         data_str = chunk[6:].strip()
                         if not data_str:
                             continue
                         data = json.loads(data_str)
-                        
+
                         if "error" in data:
                             error_data = data
                             break
@@ -2890,7 +2890,7 @@ class BrowserWorkflowMixin:
                         media_items = data.get("media")
                         if isinstance(media_items, list):
                             collected_media.extend(media_items)
-                        
+
                         if "choices" in data and data["choices"]:
                             delta = data["choices"][0].get("delta", {})
                             content = delta.get("content", "")
@@ -2905,7 +2905,7 @@ class BrowserWorkflowMixin:
         finally:
             with contextlib.suppress(Exception):
                 stream.close()
-        
+
         if not error_data:
             failure = getattr(session, "_workflow_failure", None)
             if isinstance(failure, dict) and failure.get("task_id") == str(getattr(session, "current_task_id", "") or ""):

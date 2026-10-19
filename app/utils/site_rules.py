@@ -89,7 +89,7 @@ def _read_json_file(path: Path) -> Dict[str, Any]:
         return {}
 
     try:
-        with open(path, "r", encoding="utf-8-sig") as handle:
+        with open(path, encoding="utf-8-sig") as handle:
             data = json.load(handle)
         return data if isinstance(data, dict) else {}
     except Exception:

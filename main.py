@@ -493,7 +493,7 @@ async def lifespan(app: FastAPI):
         logger.info("[startup] 以浏览器 worker 角色运行（仅供本机 API 进程调用）")
     _install_asyncio_exception_filter()
     logger.info("=" * 60)
-    logger.info("Universal Web-to-API 服务启动中...")       
+    logger.info("Universal Web-to-API 服务启动中...")
     # 启动时清理临时文件目录与调试日志目录
     try:
         from app.utils.file_paste import cleanup_temp_dir
@@ -529,7 +529,7 @@ async def lifespan(app: FastAPI):
         try:
             browser = get_browser(auto_connect=False)
             health = await asyncio.to_thread(browser.health_check)
-    
+
             if health["connected"]:
                 startup_blank_tab_id = _capture_startup_blank_tab_id(browser)
                 if is_restart:
@@ -567,7 +567,7 @@ async def lifespan(app: FastAPI):
                     logger.info(f"✅ 浏览器已连接 (检测到 {existing_tab_count} 个现有网页，跳过教程)")
             else:
                 logger.warning(f"⚠️ 浏览器未连接: {health.get('error', '未知')}")
-        
+
         except Exception as e:
             logger.warning(f"⚠️ 浏览器检查跳过: {e}")
 

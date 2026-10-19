@@ -165,7 +165,7 @@ def _write_env_config_file(new_config: Dict[str, Any]) -> None:
     lines = []
 
     if env_path.exists():
-        with open(env_path, "r", encoding="utf-8") as f:
+        with open(env_path, encoding="utf-8") as f:
             lines = f.readlines()
 
     new_lines = []
@@ -216,7 +216,7 @@ def _write_env_config_file(new_config: Dict[str, Any]) -> None:
 def _read_json_file(path: Path, default: Any) -> Any:
     if not path.exists():
         return default
-    with open(path, "r", encoding="utf-8-sig") as f:
+    with open(path, encoding="utf-8-sig") as f:
         return json.load(f)
 
 
@@ -424,7 +424,7 @@ async def get_env_config(authenticated: bool = Depends(verify_auth)):
         }
     except Exception as e:
         logger.error(f"读取环境配置失败: {e}")
-        raise HTTPException(status_code=500, detail=f"读取失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"读取失败: {e!s}")
 
 
 def _env_value_is_true(value: Any) -> bool:
@@ -532,7 +532,7 @@ async def save_env_config(
         raise
     except Exception as e:
         logger.error(f"保存环境配置失败: {e}")
-        raise HTTPException(status_code=500, detail=f"保存失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"保存失败: {e!s}")
 
 
 @router.get("/api/settings/backup")
@@ -542,7 +542,7 @@ async def export_settings_backup(authenticated: bool = Depends(verify_sensitive_
         return _build_settings_backup_bundle()
     except Exception as e:
         logger.error(f"导出配置备份失败: {e}")
-        raise HTTPException(status_code=500, detail=f"导出失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"导出失败: {e!s}")
 
 
 @router.post("/api/settings/backup")
@@ -685,7 +685,7 @@ async def import_settings_backup(
         raise
     except Exception as e:
         logger.error(f"导入配置备份失败: {e}")
-        raise HTTPException(status_code=500, detail=f"导入失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"导入失败: {e!s}")
 
 
 @router.get("/api/settings/browser-constants")
@@ -698,7 +698,7 @@ async def get_browser_constants(authenticated: bool = Depends(verify_auth)):
 
     except Exception as e:
         logger.error(f"读取浏览器常量失败: {e}")
-        raise HTTPException(status_code=500, detail=f"读取失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"读取失败: {e!s}")
 
 
 @router.post("/api/settings/browser-constants")
@@ -762,7 +762,7 @@ async def save_browser_constants(
         raise
     except Exception as e:
         logger.error(f"保存浏览器常量失败: {e}")
-        raise HTTPException(status_code=500, detail=f"保存失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"保存失败: {e!s}")
 
 
 @router.get("/api/settings/update-preserve")
@@ -776,7 +776,7 @@ async def get_update_preserve_settings(authenticated: bool = Depends(verify_auth
         }
     except Exception as e:
         logger.error(f"读取更新白名单失败: {e}")
-        raise HTTPException(status_code=500, detail=f"读取失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"读取失败: {e!s}")
 
 
 @router.post("/api/settings/update-preserve")
@@ -801,4 +801,4 @@ async def save_update_preserve(
         raise
     except Exception as e:
         logger.error(f"保存更新白名单失败: {e}")
-        raise HTTPException(status_code=500, detail=f"保存失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"保存失败: {e!s}")

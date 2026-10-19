@@ -5,7 +5,7 @@ app/core/extractors - 内容提取器模块
 """
 
 from app.core.extractors.base import BaseExtractor
-from app.core.extractors.registry import ExtractorRegistry 
+from app.core.extractors.registry import ExtractorRegistry
 from app.core.extractors.deep_mode import DeepBrowserExtractor
 from app.core.extractors.dom_mode import DOMDirectExtractor
 from app.core.extractors.hybrid_mode import HybridExtractor
@@ -20,13 +20,13 @@ ExtractorRegistry.register_class(HybridExtractor)
 
 
 __all__ = [
-    'BaseExtractor', 
-    'ExtractorRegistry',  
+    'BaseExtractor',
+    'ExtractorRegistry',
     'DeepBrowserExtractor',
     'DOMDirectExtractor',
     'HybridExtractor',
-    'ImageExtractor',    
-    'image_extractor',    
+    'ImageExtractor',
+    'image_extractor',
     'MediaExtractor',
     'media_extractor',
 ]

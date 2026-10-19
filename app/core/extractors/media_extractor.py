@@ -2687,7 +2687,7 @@ class MediaExtractor:
                     related_count += 1
                     summaries.append(
                         (
-                            f"{str(item.get('transport') or '')}:{str(item.get('dir') or '')}:"
+                            f"{item.get('transport') or ''!s}:{item.get('dir') or ''!s}:"
                             f"status={item.get('status')}:"
                             f"content_type={content_type[:48]!r}:"
                             f"url={url[:120]!r}"

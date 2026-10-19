@@ -29,7 +29,7 @@ def sanitize_response_text(
     strip_consecutive_newlines: bool = True,
 ) -> str:
     """Clean and normalize full assistant response text.
-    
+
     1. Removes known platform temporary/placeholder URL lines.
     2. Compresses 3+ consecutive newlines into 2.
     3. Truncates text based on requested stop sequences.

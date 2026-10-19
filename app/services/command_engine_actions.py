@@ -212,7 +212,7 @@ class CommandEngineActionsMixin:
             raise ValueError("missing_file_path")
         if not os.path.isfile(resolved):
             raise ValueError(f"file_not_found: {resolved}")
-        with open(resolved, "r", encoding=encoding or "utf-8-sig") as f:
+        with open(resolved, encoding=encoding or "utf-8-sig") as f:
             return resolved, f.read()
 
     @staticmethod
@@ -740,7 +740,7 @@ return (() => {
         timeout_sec = max(0.5, self._coerce_float(action.get("timeout_sec", 6), 6.0))
         random_radius = max(0, self._coerce_int(action.get("random_radius", 4), 4))
         deadline = time.time() + timeout_sec
-        
+
         max_attempts = action.get("max_attempts")
         if max_attempts is not None:
             try:
@@ -1163,7 +1163,7 @@ return (() => {
                             session.preset_name
                         )
                         is_stealth = site_cfg.get("stealth", False) if site_cfg else False
-                        
+
                         if is_stealth:
                             logger.debug(f"[CMD] 准备低熵模式点击元素: {selector}")
                             # 尝试通过 JS 获取元素中心坐标

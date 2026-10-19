@@ -253,7 +253,7 @@ def test_main_lifespan_warns_public_bind_without_auth(monkeypatch):
     for name in ("AUTH_ENABLED", "AUTH_TOKEN", "DASHBOARD_AUTH_ENABLED", "DASHBOARD_AUTH_TOKEN",
                  hs.INSECURE_OVERRIDE_ENV):
         monkeypatch.delenv(name, raising=False)
-    
+
     # 改为只告警，不抛出 InsecureStartupConfigError 阻断启动
     main._enforce_secure_startup_config()
 

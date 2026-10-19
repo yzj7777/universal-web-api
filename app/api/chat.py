@@ -31,9 +31,9 @@ from pydantic import BaseModel, Field, field_validator
 from app.core.config import _request_context, get_logger, SSEFormatter
 from app.core import get_browser
 from app.services.request_manager import (
-    request_manager, 
-    RequestContext, 
-    RequestStatus, 
+    request_manager,
+    RequestContext,
+    RequestStatus,
     watch_client_disconnect,
     cancel_storm_guard,
 )
@@ -1349,15 +1349,15 @@ def _apply_response_format(messages: list, response_format: dict) -> list:
             hint = hint_template.replace("{schema}", schema_str)
         except Exception:
             hint = hint_template.replace("{schema}", str(schema_content))
-    
+
     import copy
     new_messages = copy.deepcopy(messages)
-    
+
     for i in range(len(new_messages) - 1, -1, -1):
         msg = new_messages[i]
         if msg.get("role") == "user":
             content = msg.get("content", "")
-            
+
             if isinstance(content, str):
                 msg["content"] = content + hint
                 break
@@ -1370,7 +1370,7 @@ def _apply_response_format(messages: list, response_format: dict) -> list:
                 else:
                     content.append({"type": "text", "text": hint})
                 break
-    
+
     return new_messages
 
 
@@ -1806,8 +1806,8 @@ async def _stream_with_lifecycle(
 
                 for chunk in gen:
                     chunk_counter += 1
-                    
-                    
+
+
                     if ctx.should_stop():
                         cancel_reason = str(ctx.cancel_reason or "unknown")
                         if cancel_reason in {"cleanup", "client_disconnected", "coroutine_cancelled"}:
@@ -1916,7 +1916,7 @@ async def _stream_with_lifecycle(
             has_images = '"images"' in chunk if isinstance(chunk, str) else False
             if has_images:
                 logger.info(f"[SEND] 发送包含图片的 chunk 给客户端")
-            
+
             outgoing_chunks = filter_openai_stop_sse_chunk(chunk, stop_state, body.model)
             for outgoing_chunk in outgoing_chunks:
                 emit_chunk, chunk_had_done = _split_sse_done_frame(outgoing_chunk)
@@ -2034,7 +2034,7 @@ async def _stream_with_lifecycle(
         logger.error(f"异常: {e}")
         request_manager.capture_error(ctx, e, code="internal_error")
         ctx.mark_failed(str(getattr(e, "code", None) or e))
-        yield _pack_error(f"执行错误: {str(e)}", "internal_error")
+        yield _pack_error(f"执行错误: {e!s}", "internal_error")
         yield _pack_done()
 
     finally:

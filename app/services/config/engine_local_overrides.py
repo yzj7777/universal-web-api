@@ -25,7 +25,7 @@ class ConfigLocalOverridesMixin:
             return {}
 
         try:
-            with open(self.local_sites_file, "r", encoding="utf-8-sig") as f:
+            with open(self.local_sites_file, encoding="utf-8-sig") as f:
                 data = json.load(f)
 
             self.last_local_mtime = os.path.getmtime(self.local_sites_file)
@@ -154,7 +154,7 @@ class ConfigLocalOverridesMixin:
         payload = dict(self._local_sites_payload or {})
         if os.path.exists(self.local_sites_file):
             try:
-                with open(self.local_sites_file, "r", encoding="utf-8-sig") as f:
+                with open(self.local_sites_file, encoding="utf-8-sig") as f:
                     latest_payload = json.load(f)
                 if isinstance(latest_payload, dict):
                     payload.update(latest_payload)

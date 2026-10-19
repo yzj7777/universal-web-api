@@ -81,9 +81,9 @@ def load_dotenv(env_file: str = ".env", override: bool = False):
     env_path = Path(env_file)
     if not env_path.exists():
         return
-    
+
     try:
-        with open(env_path, 'r', encoding='utf-8') as f:
+        with open(env_path, encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith('#'):
@@ -160,15 +160,15 @@ class AppConfig:
     @staticmethod
     def get_host() -> str:
         return os.getenv("APP_HOST", "127.0.0.1")
-    
+
     @staticmethod
     def get_port() -> int:
         return AppConfig._env_int("APP_PORT", 8199)
-    
+
     @staticmethod
     def is_debug() -> bool:
         return os.getenv("APP_DEBUG", "false").lower() in ("true", "1", "yes")
-    
+
     @staticmethod
     def get_log_level() -> str:
         return os.getenv("LOG_LEVEL", "INFO").upper()
@@ -193,12 +193,12 @@ class AppConfig:
     def get_dashboard_auth_token() -> str:
         token = os.getenv("DASHBOARD_AUTH_TOKEN", "").strip()
         return token or AppConfig.get_auth_token()
-    
+
     # ===== CORS 配置 =====
     @staticmethod
     def is_cors_enabled() -> bool:
         return os.getenv("CORS_ENABLED", "true").lower() in ("true", "1", "yes")
-    
+
     @staticmethod
     def get_cors_origins() -> List[str]:
         """S1：默认不放行任何跨源来源。
@@ -209,7 +209,7 @@ class AppConfig:
         from app.core.http_security import parse_cors_origins
 
         return parse_cors_origins(os.getenv("CORS_ORIGINS", ""))
-    
+
     # ===== 浏览器配置 =====
     @staticmethod
     def get_browser_port() -> int:
@@ -218,12 +218,12 @@ class AppConfig:
     @staticmethod
     def is_auto_open_browser_enabled() -> bool:
         return AppConfig._env_bool("AUTO_OPEN_BROWSER", True)
-    
+
     # ===== Dashboard 配置 =====
     @staticmethod
     def is_dashboard_enabled() -> bool:
         return os.getenv("DASHBOARD_ENABLED", "true").lower() in ("true", "1", "yes")
-    
+
     @staticmethod
     def get_dashboard_file() -> str:
         return os.getenv("DASHBOARD_FILE", "static/index.html")
@@ -245,24 +245,24 @@ class AppConfig:
     def get_scheduled_restart_tab_state_policy() -> str:
         """Reserved for future tab-state cleanup; preserve is currently the only policy."""
         return os.getenv("SCHEDULED_RESTART_TAB_STATE_POLICY", "preserve").strip().lower() or "preserve"
-    
+
     # ===== AI 分析配置 =====
     @staticmethod
     def get_helper_api_key() -> str:
         return os.getenv("HELPER_API_KEY", "")
-    
+
     @staticmethod
     def get_helper_base_url() -> str:
         return os.getenv("HELPER_BASE_URL", "")
-    
+
     @staticmethod
     def get_helper_model() -> str:
         return os.getenv("HELPER_MODEL", "gpt-4")
-        
+
     @staticmethod
     def get_helper_api_provider() -> str:
         return os.getenv("HELPER_API_PROVIDER", "auto").lower()
-    
+
     @staticmethod
     def get_max_html_chars() -> int:
         return AppConfig._env_int("MAX_HTML_CHARS", 120000)

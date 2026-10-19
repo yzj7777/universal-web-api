@@ -132,7 +132,7 @@ def _load_model_name_overrides_config() -> Optional[Dict[str, Any]]:
         return None
 
     try:
-        with open(config_path, "r", encoding="utf-8-sig") as f:
+        with open(config_path, encoding="utf-8-sig") as f:
             payload = json.load(f)
         return payload if isinstance(payload, dict) else None
     except Exception as e:
@@ -146,7 +146,7 @@ def _load_preset_overrides_config() -> Optional[Dict[str, Any]]:
         return None
 
     try:
-        with open(config_path, "r", encoding="utf-8-sig") as f:
+        with open(config_path, encoding="utf-8-sig") as f:
             payload = json.load(f)
         return payload if isinstance(payload, dict) else None
     except Exception as e:
@@ -170,12 +170,12 @@ def _load_tab_pool_config() -> Dict:
         "preset_overrides": {"urls": {}},
         "route_groups": [],
     }
-    
+
     # 从 browser_config.json 加载
     try:
         config_path = "config/browser_config.json"
         if os.path.exists(config_path):
-            with open(config_path, 'r', encoding='utf-8') as f:
+            with open(config_path, encoding='utf-8') as f:
                 file_config = json.load(f)
                 pool_config = file_config.get("tab_pool", {})
                 config.update(pool_config)
@@ -189,7 +189,7 @@ def _load_tab_pool_config() -> Dict:
     local_preset_overrides = _load_preset_overrides_config()
     if local_preset_overrides is not None:
         config["preset_overrides"] = local_preset_overrides
-    
+
     # 环境变量覆盖
     if os.getenv("MAX_TABS"):
         config["max_tabs"] = int(os.getenv("MAX_TABS"))
@@ -635,7 +635,7 @@ class BrowserConnectionMixin:
             name="browser-connection-watchdog",
         )
         self._watchdog_thread.start()
-    
+
     def health_check(self) -> Dict[str, Any]:
         result = {
             "status": "unhealthy",
@@ -644,7 +644,7 @@ class BrowserConnectionMixin:
             "tab_pool": None,
             "error": None
         }
-        
+
         try:
             if not self.get_browser_handle():
                 if not self._connect():
@@ -659,19 +659,19 @@ class BrowserConnectionMixin:
                 if not self._connect():
                     result["error"] = "无法连接到浏览器"
                     return result
-            
+
             result["status"] = "healthy"
             result["connected"] = True
-            
+
             if self._tab_pool:
                 result["tab_pool"] = self._tab_pool.get_status()
-        
+
         except Exception as e:
             result["error"] = str(e)
             self._connected = False
-        
+
         return result
-    
+
     def ensure_connection(self) -> bool:
         if self._connected:
             if self._probe_browser_connection():
@@ -681,13 +681,13 @@ class BrowserConnectionMixin:
             self.browser_handle = None
             self.page = None
             self._dispose_previous_browser_handle(previous_handle, "ensure_connection")
-        
+
         return self._connect()
-    
+
     def get_active_tab(self):
         """
         获取一个可用的标签页（兼容旧接口）
-        
+
         注意：新代码应使用 execute_workflow_with_session
         """
         # 生成临时任务 ID
@@ -701,33 +701,33 @@ class BrowserConnectionMixin:
     def get_temporary_tab(self, timeout: int = 30):
         """
         获取临时标签页的上下文管理器（推荐使用）
-    
+
         使用方式:
             with browser.get_temporary_tab() as tab:
                 elements = tab.eles(selector)
             # 退出 with 块后自动释放
-    
+
         Args:
             timeout: 获取标签页的超时时间（秒）
-    
+
         Yields:
             tab: 浏览器标签页对象
-    
+
         Raises:
             BrowserConnectionError: 无法获取可用标签页时抛出
         """
         task_id = f"temp_{time.time_ns()}"
         session = None
-    
+
         try:
             session = self.tab_pool.acquire(task_id, timeout=timeout)
-        
+
             if session is None:
                 raise BrowserConnectionError("无法获取可用标签页，服务繁忙请稍后重试")
-        
+
             logger.debug(f"[{session.id}] 临时标签页已分配")
             yield session.tab
-        
+
         finally:
             if session is not None:
                 self.tab_pool.release(session.id, expected_task_id=task_id)
@@ -742,23 +742,23 @@ class BrowserConnectionMixin:
     def _check_page_status(self, tab) -> Dict[str, Any]:
         """检查页面状态"""
         result = {"ready": True, "reason": None}
-        
+
         try:
             url = tab.url or ""
-            
+
             if not url or url in ("about:blank", "chrome://newtab/"):
                 result["ready"] = False
                 result["reason"] = "请先打开目标AI网站"
                 return result
-            
+
             error_indicators = ["chrome-error://", "about:neterror"]
             for indicator in error_indicators:
                 if indicator in url:
                     result["ready"] = False
                     result["reason"] = "页面加载错误"
                     return result
-        
+
         except Exception as e:
             logger.debug(f"页面状态检查异常: {e}")
-        
+
         return result

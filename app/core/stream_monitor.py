@@ -186,10 +186,10 @@ class StreamContext:
         # 两阶段 baseline
         self.instant_baseline = None
         self.user_baseline = None
-        
+
         # v5.4：记录 instant 阶段最后一个节点的长度
         self.instant_last_node_len = 0
-        
+
         # v5.5 新增：图片追踪
         self.baseline_image_count = 0
         self.baseline_image_references: set[str] = set()
@@ -398,7 +398,7 @@ class GeneratingStatusCache:
 
 class StreamMonitor:
     """流式监听器（v5.5 图片支持版 + 可配置超时）"""
-    
+
     DEFAULT_HARD_TIMEOUT = 300  # 默认硬超时（秒）
     BASELINE_POLLUTION_THRESHOLD = 20
     FINAL_SETTLE_HARDCAP = 5.0  # 收尾 settle 观察的基础硬顶（秒）
@@ -425,15 +425,15 @@ class StreamMonitor:
         self.formatter = formatter
         self._should_stop = stop_checker or (lambda: False)
         self.extractor = extractor if extractor is not None else DeepBrowserExtractor()
-        
+
         # 图片配置
         self._image_config = image_config or {}
         self._image_extraction_enabled = self._image_config.get("enabled", False)
-        
+
         # 🆕 流式配置（支持站点级覆盖）
         self._stream_config = stream_config or {}
         self._hard_timeout = self._stream_config.get(
-            "hard_timeout", 
+            "hard_timeout",
             self.DEFAULT_HARD_TIMEOUT
         )
 
@@ -982,7 +982,7 @@ class StreamMonitor:
         self._last_visual_reply_log_info = None
         logger.debug("流式监听启动")
         logger.debug(f"[MONITOR] selector_raw={selector!r}, image_enabled={self._image_extraction_enabled}")
-        
+
         if completion_id is None:
             completion_id = SSEFormatter._generate_id()
 
@@ -1057,7 +1057,7 @@ class StreamMonitor:
         ctx.instant_last_node_len = ctx.instant_baseline.get('text_len', 0)
         ctx.baseline_image_count = ctx.instant_baseline.get('image_count', 0)  # 🆕
         ctx.baseline_image_references = _snapshot_image_reference_keys(ctx.instant_baseline)
-        
+
         logger.debug(
             f"[Instant] count={ctx.instant_baseline['groups_count']}, "
             f"last_node_len={ctx.instant_last_node_len}, "
@@ -1094,7 +1094,7 @@ class StreamMonitor:
                 logger.debug(f"用户消息上屏 ({instant_count} -> {current_count})")
                 ctx.user_msg_confirmed = True
                 ctx.user_baseline = current_snapshot
-                
+
                 pollution_delta = current_text_len - ctx.instant_last_node_len
                 if pollution_delta > self.BASELINE_POLLUTION_THRESHOLD:
                     logger.debug("AI 极速回复")
@@ -1105,7 +1105,7 @@ class StreamMonitor:
                         logger.info(f"[Quick Start] 检测到快速回复（{pollution_delta} 字符），立即开始监控")
                         ctx.active_turn_started = True
                         ctx.active_turn_baseline_len = ctx.instant_last_node_len
-                
+
                 break
 
             elif current_count >= instant_count + 2:
@@ -1130,7 +1130,7 @@ class StreamMonitor:
                     ctx.images_detected = True
                     self._prefetch_snapshot_image_urls(current_snapshot)
                     break
-                
+
                 if current_text_len > ctx.instant_last_node_len + 10:
                     logger.debug("[Same Node] 同节点文本增长，可能为 AI 回复")
                     ctx.user_baseline = current_snapshot
@@ -1167,7 +1167,7 @@ class StreamMonitor:
                         ctx.active_turn_baseline_len = 0
                     else:
                         ctx.active_turn_baseline_len = baseline.get('text_len', 0)
-                    
+
                     break
 
                 if elapsed > BrowserConstants.STREAM_INITIAL_WAIT:
@@ -1415,10 +1415,10 @@ class StreamMonitor:
     def _legacy_latest_message_snapshot(self, selector: str) -> dict:
         """取最后一个节点快照（v5.5：包含图片检测）"""
         result = {
-            'groups_count': 0, 
-            'anchor': None, 
-            'text': '', 
-            'text_len': 0, 
+            'groups_count': 0,
+            'anchor': None,
+            'text': '',
+            'text_len': 0,
             'is_generating': False,
             'image_count': 0,      # 🆕
             'has_images': False,   # 🆕
@@ -1479,10 +1479,10 @@ class StreamMonitor:
     def _legacy_snapshot_prefer_anchor(self, selector: str, prefer_anchor: Optional[str]) -> dict:
         """按锚点锁定读取目标元素（v5.5：包含图片检测）"""
         result = {
-            'groups_count': 0, 
-            'anchor': None, 
-            'text': '', 
-            'text_len': 0, 
+            'groups_count': 0,
+            'anchor': None,
+            'text': '',
+            'text_len': 0,
             'is_generating': False,
             'image_count': 0,      # 🆕
             'has_images': False,   # 🆕
@@ -1766,7 +1766,7 @@ class StreamMonitor:
             eles = self.finder.find_all(selector, timeout=1)
             if not eles:
                 return ""
-            
+
             target, _ = self._select_candidate_element(eles)
             if target is None:
                 return ""
@@ -1781,17 +1781,17 @@ class StreamMonitor:
 
     def _detect_ai_start(self, baseline: dict, current: dict, ctx: StreamContext) -> Tuple[bool, str]:
         """检测 AI 是否开始回复（v5.5：支持图片检测）"""
-        
+
         if current['groups_count'] > baseline['groups_count']:
             return True, f"节点数增加 {current['groups_count'] - baseline['groups_count']}"
-        
+
         if current['is_generating']:
             return True, "生成指示器激活"
-        
+
         growth = current['text_len'] - baseline['text_len']
         if growth > 0 and (current.get('text', '').strip() != baseline.get('text', '').strip() or growth >= 3):
             return True, f"文本增长 {growth} 字符"
-        
+
         # 🆕 图片检测：即使没有文本增长，有图片出现也认为开始回复
         current_img = current.get('image_count', 0)
         baseline_img = baseline.get('image_count', 0)
@@ -1799,7 +1799,7 @@ class StreamMonitor:
             ctx.images_detected = True
             self._prefetch_snapshot_image_urls(current)
             return True, f"检测到新图片 ({baseline_img} -> {current_img})"
-        
+
         return False, ""
 
     def _stream_output_phase(self, selector: str, ctx: StreamContext,
@@ -1817,7 +1817,7 @@ class StreamMonitor:
 
         last_text_len = 0
         last_image_count = ctx.baseline_image_count  # 🆕
-        
+
         phase_start = time.time()
 
         initial_snap = self._get_snapshot_prefer_anchor(selector, None)
@@ -1873,7 +1873,7 @@ class StreamMonitor:
                 else:
                     logger.error(f"[HardTimeout] 超过最大监听时间 {self._hard_timeout}s，强制退出")
                     break
-            
+
             if self._should_stop():
                 logger.info("输出阶段被取消")
                 break
@@ -2753,12 +2753,12 @@ class StreamMonitor:
         """
         if not self._image_extraction_enabled:
             return []
-        
+
         # 🆕 超时保护：默认 5 秒，可通过配置覆盖
         timeout = self._image_config.get("extraction_timeout", 5.0)
-        
 
-        
+
+
         started_at = time.time()
         try:
             # DrissionPage/CDP 对象不能跨线程安全调用；最终图片提取保持在当前工作流线程串行执行。
@@ -2800,7 +2800,7 @@ class StreamMonitor:
         except Exception as e:
             logger.error(f"[Final] 图片提取失败: {e}")
             return []
-    
+
     def get_final_images(self) -> List[Dict]:
         """获取最终提取的图片（供外部调用）"""
         return self._final_images
