@@ -223,17 +223,15 @@ def main() -> None:
 
 | 指标 | 改动前 | 改动后 | 结论 |
 | --- | --- | --- | --- |
-| `pytest` 通过 | 1302 | **1329** | +26（结构棘轮 + 路由表棘轮 + 用例适配） |
-| `pytest` 失败 | 2 | **2** | 同一批既有失败，未新增 |
+| `pytest` 通过 | 1302 | **1331** | +29（结构棘轮 + 路由表棘轮 + 用例适配） |
+| `pytest` 失败 | 2 | **0** | 两个既有失败已按「随包配置演进」对齐用例，见 §8 |
 | `pytest` 跳过 | 157 | 157 | 不变 |
 | `ruff check .` | 通过 | 通过 | 无新增告警 |
+| CI（GitHub Actions） | 红 | **绿** | ruff / ubuntu / windows / 结构 四个作业全通过，见 §8 |
 | `tests/test_exception_ratchet.py` | 通过 | 通过 | 纯搬迁：1422 → 1413，基线随文件搬家更新 |
 | `app.routes` 路由快照 | 134 条 | 134 条 | 零差异（`tests/test_route_table.py`） |
 
-既有失败（与本次改动无关，改动前就存在）：
-
-1. `tests/test_grok_parser.py::test_grok_network_pattern_matches_completed_load_responses_endpoint`
-2. `tests/test_site_workflow_upgrade.py::test_only_requested_sites_and_workflows_change_and_upgrade_is_repeatable`
+既有失败的处置见 §8（两个用例都是「测试冻结了某一版随包配置」，已改为校验契约本身）。
 
 额外的手工验证：
 
@@ -508,3 +506,29 @@ python -m app
 修改    README.md / README.zh-CN.md / README.en.md
 保留    updater.py / update_preserve.py / clean_profile.py（兼容壳，下一大版本再删）
 ```
+
+---
+
+## 8. CI 修复记录（2026-10-19）
+
+首次跑 CI 时四个作业里只有一个通过，逐项定位如下：
+
+| 现象 | 根因 | 处理 |
+| --- | --- | --- |
+| `ruff` 作业 9 秒失败，exit code 2 | 作业里用 `uv sync --frozen --no-dev`，而 ruff 在 `[dependency-groups].dev` 中；`uv run --no-sync ruff` 找不到命令 | 改为 `uv sync --frozen` |
+| ubuntu / windows 的 pytest 全红 | 两个用例把「某一版随包配置」写死 | 见下 |
+| windows 的 pytest 33 秒就退出 | Windows runner 把 stdout 重定向到管道时用本地代码页（cp1252），项目日志大量输出中文 → `UnicodeEncodeError` 把 pytest 打崩 | 工作流顶层 `PYTHONUTF8=1`、`PYTHONIOENCODING=utf-8` |
+| 失败时看不到具体用例 | Actions 日志下载在受限网络下不可用 | pytest 步骤产出 JUnit XML + `scripts/ci_report_failures.py` 把用例名转成 `::error` 注解（输出强制 ASCII，避免报告步骤自己再挂） |
+
+两个既有失败的处置：
+
+1. `test_grok_parser`：Grok 已改为 DOM 模式，`stream_config.network` 不再写死
+   `stream_match_pattern`。测试改为「配置里有 pattern 就校验正则；没有就校验
+   `GrokParser.get_supported_patterns()` 覆盖 `load-responses` / `responses` / `new`」。
+2. `test_site_workflow_upgrade`：迁移快照（`docs/migrations/gemini-deepseek-v2.before.json`）
+   之后配置持续演进（新增 `file_paste.attachments`、追加 `attachment_selectors`、
+   选择器调优），逐字节相等必然失败。改为「历史字段不得删除或改值，允许新增字段与追加
+   列表项；选择器只要求键仍在（值可持续调优）」——既保住迁移契约，也不再冻结配置演进。
+
+顺带：`actions/checkout` → `v7`、`actions/setup-node` → `v7`、
+`astral-sh/setup-uv` → `v10.3.0`（该仓没有 v10 浮动大版本标签），消除 Node 20 弃用警告。

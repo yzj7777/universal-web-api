@@ -126,7 +126,7 @@ universal-web-api/
 | --- | --- |
 | `routes.py` | **路由聚合入口**：把下面所有子路由 `include_router` 成一个 `router`，`main.py` 只导入它。 |
 | `deps.py` | 共享 FastAPI 依赖：从 `Authorization` / `X-API-Key` 提取令牌、校验 API 与面板认证。 |
-| `chat.py` | **核心聊天 API**：`POST /v1/chat/completions`、实验性 `POST /v1/responses`、`GET /v1/models`（及 `/v1/v1/models` 兼容别名）、`GET /api/pool/status`。负责 OpenAI 字段解析（`temperature`/`max_tokens`/`stop`/`response_format`/`tools`/`preset_name`）、多模态消息拆解、错误码映射、流式与非流式两条出口。约 2.5k 行，是最重要的协议文件。Responses 的纯转换逻辑已下沉到 `openai_responses_support.py`。 |
+| `chat.py` | **核心聊天 API**：`POST /v1/chat/completions`、实验性 `POST /v1/responses`、`GET /v1/models`（及 `/v1/v1/models` 兼容别名）。负责 OpenAI 字段解析（`temperature`/`max_tokens`/`stop`/`response_format`/`tools`/`preset_name`）、多模态消息拆解、错误码映射、流式与非流式两条出口。约 2.5k 行，是最重要的协议文件。Responses 的纯转换逻辑已下沉到 `openai_responses_support.py`。 |
 | `openai/` | **标签页 OpenAI 兼容路由的四分组**：`tab.py`（`/tab/{i}/v1/*`）、`url.py`（`/url/{domain}[/{preset}]/v1/*` 与按模型名路由）、`group.py`（`/group/{id}[/{preset}]/v1/*`）、`tab_url.py`（`/tab-url/{token}[/{preset}]/v1/*`）；`shared.py` 是四组共用的解析/配置/SSE/生命周期辅助并持有唯一的 `router` 实例；`runtime.py` 集中 `get_browser` / `request_manager` / `cancel_storm_guard` 三个可替换的运行期依赖。 |
 | `openai_responses_support.py` | Responses API 的**纯转换层**（无 I/O、无状态）：`_normalize_response*` / `_normalize_responses*`、chat 载荷 → Responses 输出、usage 组装、错误体、response item 构造。从 `chat.py` 拆出，便于单测与复用。 |
 | `stream_helpers.py` | **跨协议流式辅助**：媒体项抽取/去重、增量文本与错误消息提取、请求超时判定、`ChatRequest` 单选判定，以及 `_pack_error` / `_pack_done` / `_pack_error_done` 三个 SSE 打包函数。`chat.py` 与 `tab_routes.py` 共用同一份实现。 |
