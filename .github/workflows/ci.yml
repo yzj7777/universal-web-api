@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "arena/**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --frozen --no-dev
+      - run: uv run --no-sync ruff check .
+
+  test:
+    name: pytest (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --frozen
+      # 只跑无需真实浏览器/已登录站点的子集；browser / real_browser 用例由本地或
+      # 夜间任务执行（见 tests/manual/README.md 与 pyproject 的 markers）。
+      - run: uv run --no-sync pytest -q -m "not browser and not real_browser"
+        env:
+          # 干净克隆下依赖本地私有资源的用例由 conftest.py 自动 skip；
+          # 这里显式关闭真实浏览器测试，避免 CI 试图下载 Chromium。
+          UWAPI_SKIP_REAL_BROWSER: "1"
+
+  structure:
+    name: 结构与产物一致性
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --frozen
+      # .env.example 是否与 settings_registry 同步、版本号是否一致、仓库卫生
+      - run: uv run --no-sync pytest -q tests/test_structure.py tests/test_settings_registry.py tests/test_repo_hygiene.py tests/test_uv_environment.py

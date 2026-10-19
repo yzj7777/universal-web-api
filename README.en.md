@@ -18,7 +18,7 @@
 
 <br>
 
-> Current release: **3.0.1** (see [`VERSION`](./VERSION); release notes in [`CHANGELOG-3.0.1.md`](./CHANGELOG-3.0.1.md))
+> Current release: **3.0.1** (see [`VERSION`](./VERSION); release notes in [`CHANGELOG.md`](./CHANGELOG.md))
 
 **Universal Web API** is a **local API bridge & debugging tool** designed for developers. It converts AI web services (e.g., ChatGPT, DeepSeek, Claude, Gemini) logged in your local browser into local standard OpenAI/Anthropic-compatible APIs.
 
@@ -78,6 +78,7 @@ graph TD
    ```bash
    uv sync
    uv run python main.py
+   # equivalent entry point: uv run python -m app
    ```
 3. **Initialization**: the launcher inside `main.py` verifies `.venv`, applies the DrissionPage patch, and pops up the controlled browser automatically. The console opens in a normal browser at `http://127.0.0.1:8199`. Keep AI websites in the controlled browser, and use your normal browser for the dashboard and tutorial.
 4. **Log In**: In the controlled browser, log in to your own AI web accounts (e.g., chatgpt.com, claude.ai), then keep the target site on a real chat-ready page.
@@ -216,7 +217,7 @@ Most tests are browser-independent regression tests under [`tests/`](./tests). A
 
 ## 🔄 Upgrading Safely
 
-Before upgrading, back up `config/`, `chrome_profile/`, `.env`, and any custom scripts. The updater preserves user data listed in `UPDATE_PRESERVE` and supports a configurable update whitelist in the dashboard. After upgrading, review the latest `CHANGELOG-<version>.md` (currently [`CHANGELOG-3.0.1.md`](./CHANGELOG-3.0.1.md)), rerun the DrissionPage patch when prompted, and send one real smoke-test request before resuming normal traffic.
+Before upgrading, back up `config/`, `chrome_profile/`, `.env`, and any custom scripts. The updater preserves user data listed in `UPDATE_PRESERVE` and supports a configurable update whitelist in the dashboard. After upgrading, review the latest `CHANGELOG.md` (currently [`CHANGELOG.md`](./CHANGELOG.md)), rerun the DrissionPage patch when prompted, and send one real smoke-test request before resuming normal traffic.
 
 ---
 

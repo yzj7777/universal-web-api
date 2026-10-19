@@ -3,10 +3,10 @@
 只用 psutil 读进程信息，不连接 CDP（连接 CDP 会解除标签页冻结、干扰观察）。
 
 用法（项目启动后另开一个终端）：
-    python perf_watch.py                         # 默认浏览器端口 9222、服务端口 8199，每 5 秒一行
-    python perf_watch.py --interval 2 --csv v3.csv
-    python perf_watch.py --duration 600 --csv v2.csv   # 采样 10 分钟后自动结束
-    python perf_watch.py --browser-port 9333 --api-port 8200
+    python tools/perf_watch.py                         # 默认浏览器端口 9222、服务端口 8199，每 5 秒一行
+    python tools/perf_watch.py --interval 2 --csv v3.csv
+    python tools/perf_watch.py --duration 600 --csv v2.csv   # 采样 10 分钟后自动结束
+    python tools/perf_watch.py --browser-port 9333 --api-port 8200
 
 Ctrl+C 结束时打印平均值 / 峰值。两个版本各跑一次同样的操作，再对比两份汇总或 CSV。
 

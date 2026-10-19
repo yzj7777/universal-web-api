@@ -273,7 +273,7 @@ def clean_browser_profile() -> None:
     from app.runtime.browser_launcher import resolve_profile_dir
 
     try:
-        from clean_profile import safe_slim_profile
+        from app.update.profile import safe_slim_profile
 
         safe_slim_profile(resolve_profile_dir())
     except Exception as exc:  # broad-except: 清理是可选优化，失败不应阻止启动

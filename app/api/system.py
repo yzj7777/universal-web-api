@@ -39,7 +39,7 @@ from app.services.command_engine import command_engine
 from app.services.extractor_manager import extractor_manager
 from app.services.request_manager import request_manager
 from app.utils.site_url import extract_remote_site_domain, route_domain_matches
-from update_preserve import load_update_preserve_settings, save_update_preserve_settings
+from app.update.preserve import load_update_preserve_settings, save_update_preserve_settings
 from app.core.driver import as_element, driver_for_tab
 
 logger = get_logger("API.SYSTEM")
@@ -2462,7 +2462,7 @@ def _set_update_check_state(**changes: Any) -> Dict[str, Any]:
 
 
 def _build_update_check_payload(release: Optional[dict], repo: str) -> Dict[str, Any]:
-    from updater import compare_versions, get_current_version, normalize_version
+    from app.update.engine import compare_versions, get_current_version, normalize_version
 
     current_version = get_current_version()
     latest_tag = ""
@@ -2490,7 +2490,7 @@ def _build_update_check_payload(release: Optional[dict], repo: str) -> Dict[str,
 
 
 def _run_update_check(repo: Optional[str] = None) -> Dict[str, Any]:
-    from updater import DEFAULT_REPO, fetch_latest_release, get_current_version
+    from app.update.engine import DEFAULT_REPO, fetch_latest_release, get_current_version
 
     target_repo = str(repo or os.getenv("GITHUB_REPO", DEFAULT_REPO) or DEFAULT_REPO).strip()
     if not target_repo:
@@ -2526,7 +2526,7 @@ def _run_update_check(repo: Optional[str] = None) -> Dict[str, Any]:
 
 
 def _consume_bootstrap_update_check() -> Optional[Dict[str, Any]]:
-    from updater import DEFAULT_REPO
+    from app.update.engine import DEFAULT_REPO
 
     raw = os.environ.pop("UWAPI_UPDATE_CHECK_RESULT", "")
     try:
@@ -2599,7 +2599,7 @@ async def get_releases(
 ):
     """获取 GitHub Release 列表（供控制面板手动选择版本）"""
     try:
-        from updater import fetch_all_releases, get_current_version, normalize_version, DEFAULT_REPO
+        from app.update.engine import fetch_all_releases, get_current_version, normalize_version, DEFAULT_REPO
         target_repo = repo or os.getenv("GITHUB_REPO", DEFAULT_REPO)
         releases_raw = await asyncio.to_thread(fetch_all_releases, target_repo)
         current_version = get_current_version()
@@ -2642,7 +2642,7 @@ async def switch_version(
     def _run_switch():
         global _version_switch_state
         try:
-            from updater import update_to_version
+            from app.update.engine import update_to_version
             success = update_to_version(tag)
             with _version_switch_lock:
                 _version_switch_state = {"running": False, "tag": tag, "success": success, "error": None}

@@ -161,6 +161,10 @@ def pytest_configure(config: pytest.Config) -> None:
 # 统一打上 real_browser 标记，便于 `-m "not real_browser"` 快速排除；没有 Chromium 时夹具自己会 skip。
 REAL_BROWSER_FIXTURES = frozenset({"real_page", "headed_page"})
 
+# tests/manual/ 是需要真实服务与浏览器的**手动脚本**（见 tests/manual/README.md），
+# 不参与 pytest 收集，避免误命名后被 CI 当成自动化用例。
+collect_ignore = ["manual"]
+
 
 def pytest_collection_modifyitems(config: pytest.Config, items) -> None:
     for item in items:

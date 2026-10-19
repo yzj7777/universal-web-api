@@ -4,7 +4,7 @@ API writes are intercepted; no AI login or provider traffic.
 import re,hashlib
 from pathlib import Path
 from playwright.sync_api import sync_playwright,expect
-root=Path(__file__).resolve().parents[1];before=hashlib.sha256((root/'config/sites.json').read_bytes()).hexdigest();errors=[];writes=[]
+root=Path(__file__).resolve().parents[2];before=hashlib.sha256((root/'config/sites.json').read_bytes()).hexdigest();errors=[];writes=[]
 with sync_playwright() as p:
  b=p.chromium.launch();page=b.new_page(viewport={'width':1512,'height':1120})
  page.on('pageerror',lambda e:errors.append(str(e)))

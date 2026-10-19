@@ -8,7 +8,7 @@ import urllib.request
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
 
-ROOT=Path(__file__).resolve().parents[1]
+ROOT=Path(__file__).resolve().parents[2]
 BASE='http://127.0.0.1:8000'
 DOMAIN='aistudio.google.com'
 

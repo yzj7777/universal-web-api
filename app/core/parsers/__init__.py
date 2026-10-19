@@ -18,7 +18,7 @@ from .claude_parser import ClaudeParser
 from .kimi_parser import KimiParser
 from .glm_parser import GLMParser
 from .qwen_parser import QwenParser
-from .mimo_parser import MimoParser
+from .mimo_runtime_parser import MimoParser
 from .lmarena_parser import LmarenaParser
 from .lmarena_side_left_parser import LmarenaSideLeftParser
 from .lmarena_battle_side_parser import (
