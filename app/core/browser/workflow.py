@@ -1655,6 +1655,197 @@ class BrowserWorkflowMixin:
 
         return _WorkflowEntry(None, domain)
 
+    def _run_media_postprocess(
+        self,
+        tab,
+        session,
+        executor,
+        extractor,
+        image_config,
+        selectors,
+        result_container_selector,
+        user_images,
+        arena_image_generation_active,
+        should_run_media_postprocess,
+        dom_stream_media_items,
+        stream_media_items,
+        media_generation_state,
+        media_dom_baseline,
+        response_text_hint,
+        request_text_hint,
+        media_postprocess_diag,
+        _combined_stop_checker,
+    ) -> Generator[str, None, bool]:
+        """工作流结束后的多模态媒体提取与回传。
+
+        原为 _execute_workflow_stream_once 尾部的 159 行内联块。形参名与
+        原局部变量完全一致，方法体因此与提取前逐字节相同（仅缩进变化），
+        由 tests/test_workflow_media_postprocess_extraction.py 断言锁定。
+
+        产出媒体相关的 SSE 块，并返回值表示 workflow_aborted。
+        """
+        workflow_aborted = False
+        try:
+            if arena_image_generation_active:
+                arena_observation = ArenaImageGenerationGuard(
+                    tab,
+                    result_selector=result_container_selector,
+                    baseline_token=image_config.get("arena_result_baseline_token", ""),
+                    baseline_property=image_config.get("arena_result_baseline_property", ""),
+                ).observe(False)
+                if (
+                    arena_observation.is_complete
+                    and arena_observation.terminal_error is not None
+                ):
+                    raise arena_observation.terminal_error
+            media_items = []
+            if should_run_media_postprocess:
+                if dom_stream_media_items:
+                    media_items = [
+                        dict(item)
+                        for item in dom_stream_media_items
+                        if isinstance(item, dict)
+                    ]
+                    media_items = self._merge_dom_and_stream_media_items(
+                        media_items,
+                        stream_media_items or [],
+                        image_config,
+                    )
+                    image_items = [item for item in media_items if item.get("media_type") == "image"]
+                    if image_items:
+                        localized_images = self._localize_images_with_background_cache(
+                            image_items,
+                            wait_seconds=float(
+                                image_config.get("background_download_wait_seconds")
+                                or image_config.get("download_wait_seconds")
+                                or 1.0
+                            ),
+                        )
+                        other_items = [item for item in media_items if item.get("media_type") != "image"]
+                        media_items = localized_images + other_items
+                    logger.debug(
+                        f"[WORKFLOW] 复用 DOM 监听已提取的媒体结果: {len(media_items)} 项"
+                    )
+                else:
+                    direct_modalities = (
+                        media_postprocess_diag.get("direct_postprocess_modalities")
+                        if media_postprocess_diag.get("decision") == "direct_postprocess_modalities"
+                        else None
+                    )
+                    media_items = self._extract_media_after_stream(
+                        tab=tab,
+                        extractor=extractor,
+                        image_config=image_config,
+                        result_selector=result_container_selector,
+                        message_wrapper_selector=selectors.get("message_wrapper", ""),
+                        completion_id=executor._completion_id,
+                        stop_checker=_combined_stop_checker,
+                        response_text_hint=response_text_hint,
+                        request_text_hint=request_text_hint,
+                        media_generation_state=media_generation_state,
+                        stream_media_items=stream_media_items,
+                        direct_modalities=direct_modalities,
+                        media_dom_baseline=media_dom_baseline,
+                    )
+
+                    if not media_items and stream_media_items:
+                        valid_stream_images = [
+                            item
+                            for item in stream_media_items
+                            if isinstance(item, dict)
+                            and str(item.get("media_type") or "image").strip().lower() == "image"
+                            and (item.get("url") or item.get("data_uri"))
+                        ]
+                        if valid_stream_images:
+                            logger.info(
+                                f"[{session.id}] DOM 媒体提取为空，安全激活网络流图片候选 ({len(valid_stream_images)} 张) 进行本地化"
+                            )
+                            media_items = self._merge_dom_and_stream_media_items(
+                                [],
+                                valid_stream_images,
+                                image_config,
+                            )
+
+            if media_items:
+                download_urls = image_config.get("download_urls", False)
+                if download_urls:
+                    image_items = [item for item in media_items if item.get("media_type") == "image"]
+                    other_items = [item for item in media_items if item.get("media_type") != "image"]
+                    image_items = self._download_url_images(image_items, tab=tab)
+                    media_items = image_items + other_items
+
+                media_items = self._persist_remote_media_urls_to_local(
+                    media_items,
+                    tab=tab,
+                    max_size_mb=int(image_config.get("max_size_mb", 10) or 10),
+                    image_config=image_config,
+                )
+
+            if media_items and user_images:
+                media_items = filter_reference_images(
+                    media_items,
+                    user_images,
+                    tab=tab,
+                    logger_context=f"{session.id}:workflow",
+                )
+
+            if arena_image_generation_active:
+                generated_images = [
+                    item
+                    for item in media_items
+                    if isinstance(item, dict)
+                    and str(item.get("media_type") or item.get("type") or "image").lower()
+                    in {"image", "image_url", "input_image"}
+                ]
+                if not generated_images:
+                    raise ArenaImageGenerationError(
+                        "arena_image_generation_failed",
+                        "Arena 图片生成失败：未能提取新的生成图片",
+                    )
+                validate_generated_images(
+                    user_images,
+                    generated_images,
+                    tab=tab,
+                )
+
+            if media_items:
+                logger.debug(f"[PROBE] 即将发送多模态资源（Markdown），数量={len(media_items)}")
+
+                try:
+                    response_media = self._prepare_media_items_for_response(media_items)
+                    md = self._build_media_markdown_block(media_items)
+                    if md:
+                        yield self.formatter.pack_chunk(
+                            md,
+                            completion_id=executor._completion_id,
+                            media=response_media,
+                        )
+                        logger.debug(f"[MD_MEDIA] 已发送结构化多模态资源，共 {len(media_items)} 项")
+                    else:
+                        yield self.formatter.pack_chunk(
+                            "",
+                            completion_id=executor._completion_id,
+                            media=response_media,
+                        )
+                        logger.debug(f"[MD_MEDIA] 已发送纯结构化多模态资源，共 {len(media_items)} 项")
+                except Exception as e:
+                    logger.warning(f"[MD_MEDIA] 发送 Markdown 媒体链接失败: {e}")
+        except ArenaImageGenerationError as e:
+            workflow_aborted = True
+            logger.warning(
+                f"[{session.id}] Arena 图片媒体校验失败: code={e.code}, error={e.message}"
+            )
+            yield self.formatter.pack_error(
+                e.message,
+                error_type="invalid_request_error",
+                code=e.code,
+                status_code=e.status_code,
+                retryable=e.retryable,
+            )
+        except Exception as e:
+            logger.warning(f"[{session.id}] 多模态提取失败: {e}")
+        return workflow_aborted
+
     @attachment_scope
     def _execute_workflow_stream_once(
         self,
@@ -2680,165 +2871,26 @@ class BrowserWorkflowMixin:
                         "[WORKFLOW] 进入多模态提取分支："
                         f"{json.dumps(media_postprocess_diag, ensure_ascii=False)}"
                     )
-                try:
-                    if arena_image_generation_active:
-                        arena_observation = ArenaImageGenerationGuard(
-                            tab,
-                            result_selector=result_container_selector,
-                            baseline_token=image_config.get("arena_result_baseline_token", ""),
-                            baseline_property=image_config.get("arena_result_baseline_property", ""),
-                        ).observe(False)
-                        if (
-                            arena_observation.is_complete
-                            and arena_observation.terminal_error is not None
-                        ):
-                            raise arena_observation.terminal_error
-                    media_items = []
-                    if should_run_media_postprocess:
-                        if dom_stream_media_items:
-                            media_items = [
-                                dict(item)
-                                for item in dom_stream_media_items
-                                if isinstance(item, dict)
-                            ]
-                            media_items = self._merge_dom_and_stream_media_items(
-                                media_items,
-                                stream_media_items or [],
-                                image_config,
-                            )
-                            image_items = [item for item in media_items if item.get("media_type") == "image"]
-                            if image_items:
-                                localized_images = self._localize_images_with_background_cache(
-                                    image_items,
-                                    wait_seconds=float(
-                                        image_config.get("background_download_wait_seconds")
-                                        or image_config.get("download_wait_seconds")
-                                        or 1.0
-                                    ),
-                                )
-                                other_items = [item for item in media_items if item.get("media_type") != "image"]
-                                media_items = localized_images + other_items
-                            logger.debug(
-                                f"[WORKFLOW] 复用 DOM 监听已提取的媒体结果: {len(media_items)} 项"
-                            )
-                        else:
-                            direct_modalities = (
-                                media_postprocess_diag.get("direct_postprocess_modalities")
-                                if media_postprocess_diag.get("decision") == "direct_postprocess_modalities"
-                                else None
-                            )
-                            media_items = self._extract_media_after_stream(
-                                tab=tab,
-                                extractor=extractor,
-                                image_config=image_config,
-                                result_selector=result_container_selector,
-                                message_wrapper_selector=selectors.get("message_wrapper", ""),
-                                completion_id=executor._completion_id,
-                                stop_checker=_combined_stop_checker,
-                                response_text_hint=response_text_hint,
-                                request_text_hint=request_text_hint,
-                                media_generation_state=media_generation_state,
-                                stream_media_items=stream_media_items,
-                                direct_modalities=direct_modalities,
-                                media_dom_baseline=media_dom_baseline,
-                            )
-
-                            if not media_items and stream_media_items:
-                                valid_stream_images = [
-                                    item
-                                    for item in stream_media_items
-                                    if isinstance(item, dict)
-                                    and str(item.get("media_type") or "image").strip().lower() == "image"
-                                    and (item.get("url") or item.get("data_uri"))
-                                ]
-                                if valid_stream_images:
-                                    logger.info(
-                                        f"[{session.id}] DOM 媒体提取为空，安全激活网络流图片候选 ({len(valid_stream_images)} 张) 进行本地化"
-                                    )
-                                    media_items = self._merge_dom_and_stream_media_items(
-                                        [],
-                                        valid_stream_images,
-                                        image_config,
-                                    )
-
-                    if media_items:
-                        download_urls = image_config.get("download_urls", False)
-                        if download_urls:
-                            image_items = [item for item in media_items if item.get("media_type") == "image"]
-                            other_items = [item for item in media_items if item.get("media_type") != "image"]
-                            image_items = self._download_url_images(image_items, tab=tab)
-                            media_items = image_items + other_items
-
-                        media_items = self._persist_remote_media_urls_to_local(
-                            media_items,
-                            tab=tab,
-                            max_size_mb=int(image_config.get("max_size_mb", 10) or 10),
-                            image_config=image_config,
-                        )
-
-                    if media_items and user_images:
-                        media_items = filter_reference_images(
-                            media_items,
-                            user_images,
-                            tab=tab,
-                            logger_context=f"{session.id}:workflow",
-                        )
-
-                    if arena_image_generation_active:
-                        generated_images = [
-                            item
-                            for item in media_items
-                            if isinstance(item, dict)
-                            and str(item.get("media_type") or item.get("type") or "image").lower()
-                            in {"image", "image_url", "input_image"}
-                        ]
-                        if not generated_images:
-                            raise ArenaImageGenerationError(
-                                "arena_image_generation_failed",
-                                "Arena 图片生成失败：未能提取新的生成图片",
-                            )
-                        validate_generated_images(
-                            user_images,
-                            generated_images,
-                            tab=tab,
-                        )
-
-                    if media_items:
-                        logger.debug(f"[PROBE] 即将发送多模态资源（Markdown），数量={len(media_items)}")
-
-                        try:
-                            response_media = self._prepare_media_items_for_response(media_items)
-                            md = self._build_media_markdown_block(media_items)
-                            if md:
-                                yield self.formatter.pack_chunk(
-                                    md,
-                                    completion_id=executor._completion_id,
-                                    media=response_media,
-                                )
-                                logger.debug(f"[MD_MEDIA] 已发送结构化多模态资源，共 {len(media_items)} 项")
-                            else:
-                                yield self.formatter.pack_chunk(
-                                    "",
-                                    completion_id=executor._completion_id,
-                                    media=response_media,
-                                )
-                                logger.debug(f"[MD_MEDIA] 已发送纯结构化多模态资源，共 {len(media_items)} 项")
-                        except Exception as e:
-                            logger.warning(f"[MD_MEDIA] 发送 Markdown 媒体链接失败: {e}")
-                except ArenaImageGenerationError as e:
-                    workflow_aborted = True
-                    logger.warning(
-                        f"[{session.id}] Arena 图片媒体校验失败: code={e.code}, error={e.message}"
-                    )
-                    yield self.formatter.pack_error(
-                        e.message,
-                        error_type="invalid_request_error",
-                        code=e.code,
-                        status_code=e.status_code,
-                        retryable=e.retryable,
-                    )
-                except Exception as e:
-                    logger.warning(f"[{session.id}] 多模态提取失败: {e}")
+                workflow_aborted = yield from self._run_media_postprocess(
+                    tab,
+                    session,
+                    executor,
+                    extractor,
+                    image_config,
+                    selectors,
+                    result_container_selector,
+                    user_images,
+                    arena_image_generation_active,
+                    should_run_media_postprocess,
+                    dom_stream_media_items,
+                    stream_media_items,
+                    media_generation_state,
+                    media_dom_baseline,
+                    response_text_hint,
+                    request_text_hint,
+                    media_postprocess_diag,
+                    _combined_stop_checker,
+                )
 
         except Exception as e:
             if not (effective_stop_checker()):
