@@ -10,7 +10,7 @@ app/services/error_metadata.py - 标准异常元数据与响应构建器
 from __future__ import annotations
 
 import dataclasses
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, Optional, Set, Tuple
 
 from fastapi.responses import JSONResponse
 
@@ -150,6 +150,25 @@ def _extract_status_code_from_text(text: str) -> Optional[int]:
             pass
     return None
 
+
+# HTTP 状态码 -> (code, error_type, retryable) 的查表。
+#
+# 原为 _metadata_from_text 里四段 if（429 / {400,422} / {401,403} / >=500），
+# 互相之间没有重叠，因此查表与逐条比较等价。5xx 是范围而非精确值，单独
+# 用 _SERVER_ERROR_MIN_STATUS + _SERVER_ERROR_SPEC 处理。
+#
+# 未在表内的 4xx（如 404、409）不在此处产出元数据，继续走后面的
+# "普通纯字符串"兜底——这是既有行为，改动时不要顺手"补全"。
+_HTTP_STATUS_ERROR_SPECS: Dict[int, Tuple[str, str, bool]] = {
+    400: ("bad_request", "invalid_request_error", False),
+    401: ("permission_denied", "permission_error", False),
+    403: ("permission_denied", "permission_error", False),
+    422: ("unprocessable_entity", "invalid_request_error", False),
+    429: ("rate_limit_exceeded", "rate_limit_error", False),
+}
+
+_SERVER_ERROR_MIN_STATUS = 500
+_SERVER_ERROR_SPEC: Tuple[str, str, bool] = ("upstream_service_error", "api_error", True)
 
 def _metadata_from_exception(
     reason_or_payload: Any,
@@ -357,37 +376,17 @@ def _metadata_from_text(
     # 3. 检查是否含有 HTTP 状态码
     status_code = _extract_status_code_from_text(raw_str)
     if status_code is not None:
-        if status_code == 429:
+        spec = _HTTP_STATUS_ERROR_SPECS.get(status_code)
+        if spec is None and status_code >= _SERVER_ERROR_MIN_STATUS:
+            spec = _SERVER_ERROR_SPEC
+        if spec is not None:
+            code, error_type, retryable = spec
             return ErrorMetadata(
-                code="rate_limit_exceeded",
-                message=raw_str,
-                status_code=429,
-                retryable=False,
-                error_type="rate_limit_error",
-            )
-        if status_code in {400, 422}:
-            return ErrorMetadata(
-                code="bad_request" if status_code == 400 else "unprocessable_entity",
+                code=code,
                 message=raw_str,
                 status_code=status_code,
-                retryable=False,
-                error_type="invalid_request_error",
-            )
-        if status_code in {401, 403}:
-            return ErrorMetadata(
-                code="permission_denied",
-                message=raw_str,
-                status_code=status_code,
-                retryable=False,
-                error_type="permission_error",
-            )
-        if status_code >= 500:
-            return ErrorMetadata(
-                code="upstream_service_error",
-                message=raw_str,
-                status_code=status_code,
-                retryable=True,
-                error_type="api_error",
+                retryable=retryable,
+                error_type=error_type,
             )
 
     # 4. 普通纯字符串
