@@ -280,3 +280,186 @@ def test_section_validators_are_module_private():
 
     for name in ("_validate_stream_config", "_validate_file_paste", "_validate_prompt_padding"):
         assert not hasattr(pkg, name), f"{name} 不应出现在 app.models 的公开接口里"
+
+
+# --------------------------------------------------------------------------
+# 2b. stream_config 的三个子段：network / send_confirmation / attachment_monitor
+#
+# 这三段占了 _validate_stream_config 163 行里的 126 行，重构前没有任何用例
+# 覆盖。下面按"每个字段类型各给一个合法值和一个非法值"的方式把现状钉住，
+# 因此这些用例锁的是重构**前**的行为。
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "network",
+    [
+        {},
+        {"listen_pattern": "api/chat"},
+        {"stream_match_pattern": "^data:"},
+        {"parser": "openai"},
+        {"first_response_timeout": 30},
+        {"silence_threshold": 1.5},
+        {"response_interval": 0},
+        {"stream_match_mode": "keyword"},
+        {"stream_match_mode": "regex"},
+        {"stream_match_mode": "  KEYWORD  "},  # 大小写与空白被规范化
+        {"listen_pattern": "x", "first_response_timeout": 1, "stream_match_mode": "regex"},
+    ],
+)
+def test_stream_config_network_valid(network):
+    config = base_config(stream_config={"network": network})
+    assert _validate_stream_config(config) is True
+    assert validate_site_config(config) is True
+
+
+@pytest.mark.parametrize(
+    "network",
+    [
+        [],  # 不是 dict
+        "x",
+        {"listen_pattern": 1},
+        {"stream_match_pattern": None},
+        {"parser": {}},
+        {"first_response_timeout": "30"},
+        {"silence_threshold": "1.5"},
+        {"response_interval": []},
+        {"stream_match_mode": "bogus"},
+        {"stream_match_mode": 1},
+    ],
+)
+def test_stream_config_network_invalid(network):
+    config = base_config(stream_config={"network": network})
+    assert _validate_stream_config(config) is False
+    assert validate_site_config(config) is False
+
+
+@pytest.mark.parametrize(
+    "send_confirmation",
+    [
+        {},
+        {"post_click_observe_window": 5},
+        {"pre_retry_probe_window": 0.5},
+        {"retry_observe_window": 1},
+        {"attachment_observe_window": 2},
+        {"retry_interval": 3},
+        {"retry_cooldown_window": 4},
+        {"max_retry_count": 3},
+        {"retry_key_combo": "ctrl+enter"},
+        {"retry_on_unconfirmed_send": True},
+        {"accept_attachment_change": False},
+        {"accept_attachment_disappear": True},
+        {"accept_probe_confirmation": False},
+        {"retry_block_on_stop_button": True},
+        {"retry_block_if_generating": False},
+        {"trust_network_activity": True},
+        {"trust_generating_indicator": False},
+        {"trust_send_disabled_with_input_shrink": True},
+        {"attachment_sensitivity": "low"},
+        {"attachment_sensitivity": "medium"},
+        {"attachment_sensitivity": "high"},
+        {"attachment_sensitivity": "  HIGH  "},  # 大小写与空白被规范化
+        {"retry_action": "click_send_btn"},
+        {"retry_action": "key_press"},
+    ],
+)
+def test_stream_config_send_confirmation_valid(send_confirmation):
+    config = base_config(stream_config={"send_confirmation": send_confirmation})
+    assert _validate_stream_config(config) is True
+    assert validate_site_config(config) is True
+
+
+@pytest.mark.parametrize(
+    "send_confirmation",
+    [
+        [],  # 不是 dict
+        "x",
+        {"post_click_observe_window": "5"},
+        {"pre_retry_probe_window": []},
+        {"retry_observe_window": None},
+        {"attachment_observe_window": {}},
+        {"retry_interval": "3"},
+        {"retry_cooldown_window": ()},
+        {"max_retry_count": 1.5},  # int 字段不接受 float
+        {"max_retry_count": "3"},
+        {"retry_key_combo": 1},
+        {"retry_on_unconfirmed_send": "true"},  # bool 字段只接受真正的 bool
+        {"accept_attachment_change": 1},
+        {"accept_attachment_disappear": 0},
+        {"accept_probe_confirmation": "yes"},
+        {"retry_block_on_stop_button": None},
+        {"retry_block_if_generating": 1},
+        {"trust_network_activity": "1"},
+        {"trust_generating_indicator": 0},
+        {"trust_send_disabled_with_input_shrink": []},
+        {"attachment_sensitivity": "extreme"},
+        {"attachment_sensitivity": 1},
+        {"retry_action": "click_button"},
+        {"retry_action": None},
+    ],
+)
+def test_stream_config_send_confirmation_invalid(send_confirmation):
+    config = base_config(stream_config={"send_confirmation": send_confirmation})
+    assert _validate_stream_config(config) is False
+    assert validate_site_config(config) is False
+
+
+@pytest.mark.parametrize(
+    "attachment_monitor",
+    [
+        {},
+        {"idle_timeout": 30},
+        {"hard_max_wait": 1.5},
+        {"require_attachment_present": True},
+        {"require_upload_signal_before_ready": False},
+        {"continue_once_on_unconfirmed_send": True},
+        {"root_selectors": []},
+        {"attachment_selectors": ["a", "b"]},
+        {"pending_selectors": ["a"]},
+        {"status_selectors": ["a"]},
+        {"content_exclusion_selectors": ["a"]},
+        {"busy_text_markers": ["生成中"]},
+        {"ignored_busy_text_markers": ["x"]},
+        {"send_button_disabled_markers": ["y"]},
+    ],
+)
+def test_stream_config_attachment_monitor_valid(attachment_monitor):
+    config = base_config(stream_config={"attachment_monitor": attachment_monitor})
+    assert _validate_stream_config(config) is True
+    assert validate_site_config(config) is True
+
+
+@pytest.mark.parametrize(
+    "attachment_monitor",
+    [
+        [],  # 不是 dict
+        "x",
+        {"idle_timeout": "30"},
+        {"hard_max_wait": []},
+        {"require_attachment_present": "true"},
+        {"require_upload_signal_before_ready": 1},
+        {"continue_once_on_unconfirmed_send": None},
+        {"root_selectors": "a"},  # list 字段不接受 str
+        {"attachment_selectors": {}},
+        {"pending_selectors": [1]},
+        {"status_selectors": ["a", 2]},
+        {"content_exclusion_selectors": [None]},
+        {"busy_text_markers": [[]]},
+        {"ignored_busy_text_markers": 1},
+        {"send_button_disabled_markers": ["a", {}]},
+    ],
+)
+def test_stream_config_attachment_monitor_invalid(attachment_monitor):
+    config = base_config(stream_config={"attachment_monitor": attachment_monitor})
+    assert _validate_stream_config(config) is False
+    assert validate_site_config(config) is False
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["mode", "hard_timeout", "request_transport", "network", "send_confirmation", "attachment_monitor"],
+)
+def test_stream_config_ignores_unrelated_keys(key):
+    """未列出的键不影响校验；各子段缺省时一律通过。"""
+    config = base_config(stream_config={key + "_unknown": object(), "whatever": [1, 2]})
+    assert _validate_stream_config(config) is True
