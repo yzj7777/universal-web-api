@@ -62,7 +62,7 @@
  "app/core/workflow/executor.py::WorkflowExecutor.execute_step": 32,
  "app/core/workflow/executor_actions.py::WorkflowExecutorActionMixin._execute_click": 41,
  "app/core/workflow/executor_actions.py::WorkflowExecutorActionMixin._execute_fill": 31,
- "app/core/workflow/executor_actions.py::WorkflowExecutorActionMixin._execute_select_model": 100,
+ "app/core/workflow/executor_actions.py::WorkflowExecutorActionMixin._execute_select_model": 71,
  "app/core/workflow/executor_actions.py::WorkflowExecutorActionMixin._get_element_viewport_pos": 33,
  "app/core/workflow/executor_actions.py::WorkflowExecutorActionMixin._wait_for_new_chat_url_transition_if_needed": 31,
  "app/core/workflow/executor_send.py::WorkflowExecutorSendMixin._build_send_attempt_state": 40,

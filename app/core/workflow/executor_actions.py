@@ -11,7 +11,7 @@ import math
 import random
 import re
 import time
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 from urllib.parse import unquote, urlparse
 
 from app.core.config import (
@@ -29,6 +29,43 @@ from app.services.arena_direct_models import (
 from app.utils.human_mouse import cdp_precise_click, human_scroll_path, idle_drift, smooth_move_mouse
 
 _URL_SNAPSHOT_TIMING_LOG_THRESHOLD = 0.25
+
+# Arena Direct 模型下拉里，一个候选元素可用于比对的标识符种类。
+# 三段匹配（精确 / 前缀 / 包含）原本各自重复读取一遍这些属性，
+# 这里统一成一次读取、三个纯函数判定。
+_MODEL_OPTION_IDENTITY_FIELDS = ("data_value", "value", "id", "label", "raw", "first_line")
+
+
+def _option_matches_exactly(identity: Dict[str, str], exact_identifiers) -> bool:
+    """Pass 1：候选元素的任一标识符与期望集合全等。"""
+    candidate_keys = {identity[field] for field in _MODEL_OPTION_IDENTITY_FIELDS if identity[field]}
+    return bool(candidate_keys.intersection(exact_identifiers))
+
+
+def _option_matches_by_prefix(identity: Dict[str, str], fuzzy_targets) -> bool:
+    """Pass 2：data-value / 标签 / 首行与目标名全等或以其开头。"""
+    for target_name in fuzzy_targets:
+        if not target_name:
+            continue
+        if (
+            identity["data_value"] == target_name
+            or identity["label"] == target_name
+            or identity["first_line"] == target_name
+            or identity["first_line"].startswith(target_name)
+            or identity["label"].startswith(target_name)
+        ):
+            return True
+    return False
+
+
+def _option_matches_by_containment(identity: Dict[str, str], fuzzy_targets) -> bool:
+    """Pass 3：保底——目标名出现在候选标签或首行里。"""
+    for target_name in fuzzy_targets:
+        if not target_name:
+            continue
+        if target_name in identity["first_line"] or target_name in identity["label"]:
+            return True
+    return False
 
 
 class WorkflowExecutorActionMixin:
@@ -1379,6 +1416,35 @@ class WorkflowExecutorActionMixin:
         except Exception:
             pass
 
+    def _model_option_identity_keys(self, candidate) -> Dict[str, str]:
+        """读取模型下拉候选元素上所有可用于比对的标识符（小写、去空白）。
+
+        `attr()` 在部分元素类型上会失败，这里逐个兜底为空串，与原先三段匹配
+        里各自的 try/except 行为一致。
+        """
+
+        def _attr(name: str) -> str:
+            try:
+                return str(candidate.attr(name) or "").strip().casefold()
+            except Exception:
+                return ""
+
+        label = self._model_element_label(candidate).casefold()
+        raw = str(
+            getattr(candidate, "text", "")
+            or getattr(candidate, "raw_text", "")
+            or ""
+        ).strip().casefold()
+        first_line = raw.splitlines()[0].strip() if raw else ""
+        return {
+            "data_value": _attr("data-value"),
+            "value": _attr("value"),
+            "id": _attr("id"),
+            "label": label,
+            "raw": raw,
+            "first_line": first_line,
+        }
+
     def _execute_select_model(
         self,
         selector: str,
@@ -1545,78 +1611,31 @@ class WorkflowExecutorActionMixin:
                         if self._get_element_viewport_pos(c) is not None
                     ]
 
+                    # 每个候选只读一次属性，三段匹配共用同一份标识符快照
+                    identities = [
+                        (candidate, self._model_option_identity_keys(candidate))
+                        for candidate in positioned_candidates
+                    ]
+
                     # --- Pass 1: 精确标识符全等匹配 ---
-                    for candidate in positioned_candidates:
-                        cand_data_val = ""
-                        try:
-                            cand_data_val = str(candidate.attr("data-value") or "").strip().casefold()
-                        except Exception:
-                            pass
-
-                        cand_val = ""
-                        try:
-                            cand_val = str(candidate.attr("value") or "").strip().casefold()
-                        except Exception:
-                            pass
-
-                        cand_id = ""
-                        try:
-                            cand_id = str(candidate.attr("id") or "").strip().casefold()
-                        except Exception:
-                            pass
-
-                        cand_label = self._model_element_label(candidate).casefold()
-                        cand_raw = str(getattr(candidate, "text", "") or getattr(candidate, "raw_text", "") or "").strip().casefold()
-                        cand_first_line = cand_raw.splitlines()[0].strip() if cand_raw else ""
-
-                        cand_keys = {k for k in (cand_data_val, cand_val, cand_id, cand_label, cand_raw, cand_first_line) if k}
-                        if cand_keys.intersection(exact_identifiers):
+                    for candidate, identity in identities:
+                        if _option_matches_exactly(identity, exact_identifiers):
                             option = candidate
                             break
 
                     # --- Pass 2: 前缀及词边界匹配（仅在 Pass 1 无精确匹配时进行） ---
                     if option is None:
-                        for candidate in positioned_candidates:
-                            cand_data_val = ""
-                            try:
-                                cand_data_val = str(candidate.attr("data-value") or "").strip().casefold()
-                            except Exception:
-                                pass
-                            cand_label = self._model_element_label(candidate).casefold()
-                            cand_raw = str(getattr(candidate, "text", "") or getattr(candidate, "raw_text", "") or "").strip().casefold()
-                            cand_first_line = cand_raw.splitlines()[0].strip() if cand_raw else ""
-
-                            for target_name in fuzzy_targets:
-                                if not target_name:
-                                    continue
-                                if (
-                                    cand_data_val == target_name
-                                    or cand_label == target_name
-                                    or cand_first_line == target_name
-                                    or cand_first_line.startswith(target_name)
-                                    or cand_label.startswith(target_name)
-                                ):
-                                    option = candidate
-                                    break
-                            if option is not None:
+                        for candidate, identity in identities:
+                            if _option_matches_by_prefix(identity, fuzzy_targets):
+                                option = candidate
                                 break
 
                     # --- Pass 3: 包含关系保底匹配（仅在 Pass 1 和 Pass 2 均未命中时进行） ---
                     if option is None:
-                        for candidate in positioned_candidates:
-                            cand_label = self._model_element_label(candidate).casefold()
-                            cand_raw = str(getattr(candidate, "text", "") or getattr(candidate, "raw_text", "") or "").strip().casefold()
-                            cand_first_line = cand_raw.splitlines()[0].strip() if cand_raw else ""
-
-                            for target_name in fuzzy_targets:
-                                if not target_name:
-                                    continue
-                                if target_name in cand_first_line or target_name in cand_label:
-                                    option = candidate
-                                    break
-                            if option is not None:
+                        for candidate, identity in identities:
+                            if _option_matches_by_containment(identity, fuzzy_targets):
+                                option = candidate
                                 break
-
                     if option is not None:
                         break
                     time.sleep(0.05)
