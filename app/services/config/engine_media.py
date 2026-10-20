@@ -5,7 +5,7 @@
 """
 
 import copy
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from app.models.schemas import (
     get_default_attachment_monitor_config,
@@ -50,126 +50,156 @@ def _normalize_image_modalities(config: Dict, result: Dict, default: Dict) -> No
         elif not get_enabled_modalities(result.get("modalities")):
             result["modalities"]["image"] = normalize_modality_policy("image", True)
 
+# ==================== 图片提取配置的逐键归一化 ====================
+#
+# _normalize_image_extraction 原本是 19 段 `if '<key>' in config:`，与文件粘贴
+# 那段同形（取值 -> 归一化 -> 写回 result），收敛成一张 (键, 归一化函数) 表。
+#
+# 各段规则并不完全一致，重构时最容易顺手抹平，故逐条记下（均已由
+# tests/test_image_extraction_normalization.py 锁定）：
+#   - selector 空值回退字面量 "img"，audio/video_selector 回退 default[key]；
+#   - mode 只走 str(x).lower()，不 strip、不做 `or ""`，与其它枚举字段不同；
+#   - max_size_mb 走 int()（截断），其余数值字段走 float()；
+#   - 五个 bool 字段里只有 wait_for_load 的兜底值是 True；
+#   - direct_postprocess_modalities / final_target_strategy 等 5 个键不在默认
+#     配置里，它们的"保持默认"就是不往 result 里写这个键。
+
+_UNSET = object()
+
+
+def _norm_image_selector(key: str, fallback=_UNSET):
+    """只在值为真时处理：strip 后为空则回退。
+
+    fallback 省略时回退 default[key]；给了字面量就回退字面量。
+    """
+
+    def _apply(result: Dict, config: Dict, default: Dict) -> None:
+        if not config.get(key):
+            return
+        value = str(config[key]).strip()
+        result[key] = value or (default[key] if fallback is _UNSET else fallback)
+
+    return _apply
+
+
+def _norm_image_optional_str(key: str):
+    """键出现就写：真值 strip 成字符串，假值写 None。"""
+
+    def _apply(result: Dict, config: Dict, default: Dict) -> None:
+        val = config.get(key)
+        result[key] = str(val).strip() if val else None
+
+    return _apply
+
+
+def _norm_image_enum(key: str, members):
+    """归一化为小写并去空白后须在集合内，否则不写入。"""
+
+    def _apply(result: Dict, config: Dict, default: Dict) -> None:
+        val = str(config.get(key) or "").strip().lower()
+        if val in members:
+            result[key] = val
+
+    return _apply
+
+
+def _norm_image_bool(key: str, fallback: bool):
+    """按 _coerce_bool 的白名单规则转 bool；认不出的值取 fallback。"""
+
+    def _apply(result: Dict, config: Dict, default: Dict) -> None:
+        result[key] = _coerce_bool(config.get(key), fallback)
+
+    return _apply
+
+
+def _norm_image_clamped(key: str, low, high, cast):
+    """转数值后钳制到 [low, high]；转换失败则保持默认（不写入）。"""
+
+    def _apply(result: Dict, config: Dict, default: Dict) -> None:
+        try:
+            result[key] = max(low, min(cast(config[key]), high))
+        except (ValueError, TypeError):
+            pass
+
+    return _apply
+
+
+def _norm_image_mode(result: Dict, config: Dict, default: Dict) -> None:
+    """mode 是唯一不 strip、不做 `or ""` 的枚举字段，单独处理。"""
+    val = str(config.get("mode")).lower()
+    if val in ("all", "first", "last"):
+        result["mode"] = val
+
+
+def _norm_image_direct_modalities(result: Dict, config: Dict, default: Dict) -> None:
+    """只保留已启用且属于 {image,audio,video} 的模态，去重后非空才写入。"""
+    raw = config.get("direct_postprocess_modalities")
+    if not isinstance(raw, (list, tuple, set)):
+        return
+    allowed: List[str] = []
+    for item in raw:
+        media_type = str(item or "").strip().lower()
+        if (
+            media_type in {"image", "audio", "video"}
+            and is_modality_enabled(result.get("modalities"), media_type)
+            and media_type not in allowed
+        ):
+            allowed.append(media_type)
+    if allowed:
+        result["direct_postprocess_modalities"] = allowed
+
+
+def _norm_image_src_allow_patterns(result: Dict, config: Dict, default: Dict) -> None:
+    """字符串按换行/分号切分，随后去空白、丢空、去重。"""
+    raw = config.get("src_allow_patterns")
+    if isinstance(raw, str):
+        raw = raw.replace("\r\n", "\n").replace(";", "\n").split("\n")
+    if not isinstance(raw, (list, tuple, set)):
+        return
+    patterns: List[str] = []
+    seen = set()
+    for item in raw:
+        text = str(item or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        patterns.append(text)
+    result["src_allow_patterns"] = patterns
+
+
+# 逐键归一化表。表中顺序即应用顺序，与原实现一致。
+_IMAGE_EXTRACTION_NORMALIZERS = (
+    ("selector", _norm_image_selector("selector", "img")),
+    ("audio_selector", _norm_image_selector("audio_selector")),
+    ("video_selector", _norm_image_selector("video_selector")),
+    ("container_selector", _norm_image_optional_str("container_selector")),
+    ("final_target_strategy", _norm_image_enum("final_target_strategy", ("container", "latest_reply", "latest_visual_reply"))),
+    ("latest_visual_column", _norm_image_enum("latest_visual_column", ("left", "right"))),
+    ("allow_container_fallback", _norm_image_bool("allow_container_fallback", False)),
+    ("force_postprocess", _norm_image_bool("force_postprocess", False)),
+    ("arena_image_generation", _norm_image_bool("arena_image_generation", False)),
+    ("direct_postprocess_modalities", _norm_image_direct_modalities),
+    ("debounce_seconds", _norm_image_clamped("debounce_seconds", 0, 30, float)),
+    ("wait_for_load", _norm_image_bool("wait_for_load", True)),
+    ("load_timeout_seconds", _norm_image_clamped("load_timeout_seconds", 1, 60, float)),
+    ("download_blobs", _norm_image_bool("download_blobs", False)),
+    ("max_size_mb", _norm_image_clamped("max_size_mb", 1, 100, int)),
+    ("canvas_export_mime", _norm_image_enum("canvas_export_mime", {"image/jpeg", "image/webp", "image/png"})),
+    ("canvas_export_quality", _norm_image_clamped("canvas_export_quality", 0.1, 1.0, float)),
+    ("src_allow_patterns", _norm_image_src_allow_patterns),
+    ("mode", _norm_image_mode),
+)
+
+
 def _normalize_image_extraction(config: Dict, result: Dict, default: Dict) -> None:
     """规范化 image_extraction 配置：选择器、后处理策略、超时与尺寸等提取参数。
 
-    从 _validate_image_config 中原样提出，方法体与提取前逐字节相同
-    （仅缩进变化）。只依赖 (config, result, default)，与其它组无耦合，
-    因此可以独立测试。
+    从 _validate_image_config 中原样提出。只依赖 (config, result, default)，
+    与其它组无耦合，因此可以独立测试。
     """
-    if "selector" in config and config["selector"]:
-        result["selector"] = str(config["selector"]).strip()
-        if not result["selector"]:
-            result["selector"] = "img"
-
-    if "audio_selector" in config and config["audio_selector"]:
-        result["audio_selector"] = str(config["audio_selector"]).strip()
-        if not result["audio_selector"]:
-            result["audio_selector"] = default["audio_selector"]
-
-    if "video_selector" in config and config["video_selector"]:
-        result["video_selector"] = str(config["video_selector"]).strip()
-        if not result["video_selector"]:
-            result["video_selector"] = default["video_selector"]
-
-    if "container_selector" in config:
-        val = config["container_selector"]
-        result["container_selector"] = str(val).strip() if val else None
-
-    if "final_target_strategy" in config:
-        val = str(config["final_target_strategy"] or "").strip().lower()
-        if val in ("container", "latest_reply", "latest_visual_reply"):
-            result["final_target_strategy"] = val
-
-    if "latest_visual_column" in config:
-        val = str(config["latest_visual_column"] or "").strip().lower()
-        if val in ("left", "right"):
-            result["latest_visual_column"] = val
-
-    if "allow_container_fallback" in config:
-        result["allow_container_fallback"] = _coerce_bool(config.get("allow_container_fallback"), False)
-
-    if "force_postprocess" in config:
-        result["force_postprocess"] = _coerce_bool(config.get("force_postprocess"), False)
-
-    if "arena_image_generation" in config:
-        result["arena_image_generation"] = _coerce_bool(
-            config.get("arena_image_generation"), False
-        )
-
-    if "direct_postprocess_modalities" in config:
-        raw_direct_modalities = config.get("direct_postprocess_modalities")
-        if isinstance(raw_direct_modalities, (list, tuple, set)):
-            allowed_direct_modalities = []
-            for item in raw_direct_modalities:
-                media_type = str(item or "").strip().lower()
-                if (
-                    media_type in {"image", "audio", "video"}
-                    and is_modality_enabled(result.get("modalities"), media_type)
-                    and media_type not in allowed_direct_modalities
-                ):
-                    allowed_direct_modalities.append(media_type)
-            if allowed_direct_modalities:
-                result["direct_postprocess_modalities"] = allowed_direct_modalities
-
-    if "debounce_seconds" in config:
-        try:
-            val = float(config["debounce_seconds"])
-            result["debounce_seconds"] = max(0, min(val, 30))
-        except (ValueError, TypeError):
-            pass
-
-    if "wait_for_load" in config:
-        result["wait_for_load"] = _coerce_bool(config.get("wait_for_load"), True)
-
-    if "load_timeout_seconds" in config:
-        try:
-            val = float(config["load_timeout_seconds"])
-            result["load_timeout_seconds"] = max(1, min(val, 60))
-        except (ValueError, TypeError):
-            pass
-
-    if "download_blobs" in config:
-        result["download_blobs"] = _coerce_bool(config.get("download_blobs"), False)
-
-    if "max_size_mb" in config:
-        try:
-            val = int(config["max_size_mb"])
-            result["max_size_mb"] = max(1, min(val, 100))
-        except (ValueError, TypeError):
-            pass
-
-    if "canvas_export_mime" in config:
-        val = str(config["canvas_export_mime"] or "").strip().lower()
-        if val in {"image/jpeg", "image/webp", "image/png"}:
-            result["canvas_export_mime"] = val
-
-    if "canvas_export_quality" in config:
-        try:
-            val = float(config["canvas_export_quality"])
-            result["canvas_export_quality"] = max(0.1, min(val, 1.0))
-        except (ValueError, TypeError):
-            pass
-
-    if "src_allow_patterns" in config:
-        raw_patterns = config.get("src_allow_patterns")
-        if isinstance(raw_patterns, str):
-            raw_patterns = raw_patterns.replace("\r\n", "\n").replace(";", "\n").split("\n")
-        if isinstance(raw_patterns, (list, tuple, set)):
-            patterns = []
-            seen = set()
-            for item in raw_patterns:
-                text = str(item or "").strip()
-                if not text or text in seen:
-                    continue
-                seen.add(text)
-                patterns.append(text)
-            result["src_allow_patterns"] = patterns
-
-    if "mode" in config:
-        val = str(config["mode"]).lower()
-        if val in ("all", "first", "last"):
-            result["mode"] = val
+    for key, normalize in _IMAGE_EXTRACTION_NORMALIZERS:
+        if key in config:
+            normalize(result, config, default)
 
 def _normalize_image_audio_capture(config: Dict, result: Dict, default: Dict) -> None:
     """规范化 image_extraction 配置：音频采集相关参数。

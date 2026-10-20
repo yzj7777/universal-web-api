@@ -89,7 +89,6 @@
  "app/services/command_engine_scheduler.py::CommandEngineSchedulerMixin._run_periodic_checks": 52,
  "app/services/command_engine_triggers.py::CommandEngineTriggersMixin._get_scope_request_count": 31,
  "app/services/command_engine_triggers.py::CommandEngineTriggersMixin._trigger_page_check": 41,
- "app/services/config/engine_media.py::_normalize_image_extraction": 51,
  "app/services/config/engine_sites.py::ConfigSitesMixin.get_site_config": 31,
  "app/services/error_metadata.py::_metadata_from_payload": 47,
  "app/services/error_metadata.py::_metadata_from_text": 34,

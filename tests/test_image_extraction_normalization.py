@@ -394,6 +394,22 @@ def test_src_allow_patterns_accepts_any_container(container):
     assert sorted(result["src_allow_patterns"]) == ["a", "b"]
 
 
+def test_src_allow_patterns_empty_result_overwrites_default():
+    """空结果**会**被写入（覆盖默认值），而不是跳过。
+
+    默认 src_allow_patterns 本身就是 []，所以要用一个哨兵值把 result 预置成
+    非空，才能看出 `"a;b"` 之外的空输入到底有没有写。
+    """
+    default = get_default_image_extraction_config()
+    assert default["src_allow_patterns"] == [], "前提：默认为空列表"
+
+    for raw in ["", "   ", ";", "\n", ["", "  "]]:
+        result = copy.deepcopy(default)
+        result["src_allow_patterns"] = ["sentinel"]
+        _normalize_image_extraction({"src_allow_patterns": raw}, result, default)
+        assert result["src_allow_patterns"] == [], repr(raw)
+
+
 def test_src_allow_patterns_dedupes_after_trim():
     result, _ = run({"src_allow_patterns": [" x ", "x", "y"]})
     assert result["src_allow_patterns"] == ["x", "y"]
@@ -414,6 +430,22 @@ def test_src_allow_patterns_non_sequence_keeps_default(raw):
 def test_mode_accepts_members_case_insensitively(raw, expected):
     result, _ = run({"mode": raw})
     assert result["mode"] == expected
+
+
+def test_mode_rejects_padded_non_default_member():
+    """专门挑一个**不等于默认值**的成员来验证"不 strip"。
+
+    默认 mode 就是 "all"，所以用 `" all "` 验证不出问题（strip 后仍是 "all"，
+    与默认相同）。这里用 `" first "` / `" last "`：strip 后会变成合法值，
+    而原实现会判为非法。
+    """
+    _, default = run({})
+    assert default["mode"] == "all", "前提：默认 mode 为 all"
+
+    for raw, would_pass_if_stripped in [(" first ", "first"), (" last ", "last"), ("FIRST ", "first")]:
+        result, _ = run({"mode": raw})
+        assert result["mode"] == default["mode"], repr(raw)
+        assert result["mode"] != would_pass_if_stripped, repr(raw)
 
 
 @pytest.mark.parametrize("raw", [" all ", "all ", " all", "nope", "", None, 1, [], {}])
