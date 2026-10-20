@@ -82,3 +82,20 @@
 选 B 的话，指标会立刻好看（broad_except −30、CC≥30 函数 −2），但那只是
 统计口径变化，不代表代码变健康——真正的收益是让 `app/` 的扫描结果反映
 真实的服务层。
+
+
+## 决策落地（步骤 19，commit `d041f75`）
+
+`app/services/arena_gpt_image_command.py` 的三个选项里，选了 **B：移到 `tools/`**，
+已执行完毕，新路径 `tools/arena_gpt_image_blind_test.py`。
+
+理由摘要（详见 `git show d041f75`）：命令沙箱是 `exec(script, globals_dict)`，脚本来源是
+运行时 `commands.json` 里的代码字符串，并不加载 `app/` 下的 `.py`；该文件硬编码的命令 ID
+`cmd_15d91034` 在全仓只出现在它自己体内；无 `__main__`、无 `main()`、无 argparse，没有任何入口。
+
+选"移动"而非"删除"，是因为它与步骤 14 删掉的 `model_selection.py` 性质不同：后者是
+**未接线的抽象层**（投机性设计），这个是**命令脚本形态的用户产物**（`run(ctx)` 契约、
+Arena 盲测参考实现）。删产物不该由重构代劳。
+
+直接效果：`app/` 下 −894 行；宽泛捕获基线 1404 → **1374**；CC ≥ 30 的函数少 2 个。
+一行 `git revert` 即可退回。
