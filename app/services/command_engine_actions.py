@@ -37,6 +37,42 @@ if TYPE_CHECKING:
 
 logger = get_logger("CMD_ENG")
 
+# ---------------------------------------------------------------------------
+# 动作类型 -> 处理器方法名
+#
+# _execute_action 原为 416 行的 if/elif 派发链（CC 123）。改为查表后新增
+# 一个动作只需在这里登记一行，不必再往链尾追加 elif（那正是原结构不断
+# 长长的原因）。表里的每个方法名必须真实存在，由
+# tests/test_command_action_registry.py 断言；与 command_defs.ACTION_TYPES
+# 的一致性也由同一测试锁定，避免 UI 上能选的动作在运行时落到"未知类型"。
+# ---------------------------------------------------------------------------
+
+_ACTION_HANDLERS: Dict[str, str] = {
+    "abort_task": "_action_abort_task",
+    "append_file": "_execute_append_file_action",
+    "clear_cookies": "_action_clear_cookies",
+    "click_captcha_challenge": "_execute_captcha_challenge_click_action",
+    "click_coordinates": "_action_click_coordinates",
+    "click_element": "_action_click_element",
+    "execute_command_group": "_execute_command_group_action",
+    "execute_preset": "_execute_preset_action",
+    "execute_workflow": "_execute_workflow_action",
+    "http_request": "_execute_http_request_action",
+    "navigate": "_action_navigate",
+    "new_chat": "_action_new_chat",
+    "read_element": "_execute_read_element_action",
+    "refresh_page": "_action_refresh_page",
+    "release_tab_lock": "_action_release_tab_lock",
+    "run_js": "_action_run_js",
+    "run_js_file": "_action_run_js_file",
+    "send_napcat": "_execute_napcat_action",
+    "send_webhook": "_execute_webhook_action",
+    "switch_preset": "_execute_preset_action",
+    "switch_proxy": "_execute_switch_proxy",
+    "wait": "_action_wait",
+    "write_element": "_execute_write_element_action",
+}
+
 MAX_COMMAND_WORKFLOW_SSE_BUFFER_CHARS = 262144
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -1297,76 +1333,19 @@ return (() => {
 
 
     def _execute_action(self, action: Dict, session: 'TabSession') -> Any:
+        """按 action_type 分派到对应的动作处理器。
+
+        原为 416 行的 if/elif 链（CC 123），现改为查 _ACTION_HANDLERS 表。
+        """
         action_type = action.get("type", "")
-
-        if action_type == "clear_cookies":
-            return self._action_clear_cookies(action, session)
-
-        elif action_type == "refresh_page":
-            return self._action_refresh_page(action, session)
-
-        elif action_type == "new_chat":
-            return self._action_new_chat(action, session)
-
-        elif action_type == "run_js":
-            return self._action_run_js(action, session)
-
-        elif action_type == "run_js_file":
-            return self._action_run_js_file(action, session)
-
-        elif action_type == "wait":
-            return self._action_wait(action, session)
-
-        elif action_type in {"execute_preset", "switch_preset"}:
-            return self._execute_preset_action(action, session)
-
-        elif action_type == "write_element":
-            return self._execute_write_element_action(action, session)
-
-        elif action_type == "read_element":
-            return self._execute_read_element_action(action, session)
-
-        elif action_type == "click_element":
-            return self._action_click_element(action, session)
-
-        elif action_type == "click_captcha_challenge":
-            return self._execute_captcha_challenge_click_action(action, session)
-
-        elif action_type == "click_coordinates":
-            return self._action_click_coordinates(action, session)
-
-        elif action_type == "execute_workflow":
-            return self._execute_workflow_action(action, session)
-
-        elif action_type == "navigate":
-            return self._action_navigate(action, session)
-
-        elif action_type == "http_request":
-            return self._execute_http_request_action(action, session)
-
-        elif action_type == "append_file":
-            return self._execute_append_file_action(action, session)
-
-        elif action_type == "switch_proxy":
-            return self._execute_switch_proxy(action, session)
-
-        elif action_type == "send_webhook":
-            return self._execute_webhook_action(action, session)
-
-        elif action_type == "send_napcat":
-            return self._execute_napcat_action(action, session)
-
-        elif action_type == "execute_command_group":
-            return self._execute_command_group_action(action, session)
-
-        elif action_type == "abort_task":
-            return self._action_abort_task(action, session)
-
-        elif action_type == "release_tab_lock":
-            return self._action_release_tab_lock(action, session)
-        else:
+        # 不能无条件查表：action_type 可能是不可哈希的对象（如 dict），
+        # 原 if/elif 链只会全部比较失败后落到 else，而 dict 查找会抛
+        # TypeError。先做类型判断以保持原有行为。
+        handler_name = _ACTION_HANDLERS.get(action_type) if isinstance(action_type, str) else None
+        if handler_name is None:
             logger.warning(f"[CMD] 未知动作类型: {action_type}")
             return {"ok": False, "error": f"unknown_action_type:{action_type or '(empty)'}"}
+        return getattr(self, handler_name)(action, session)
 
     def _execute_preset_action(self, action: Dict, session: 'TabSession') -> Dict[str, Any]:
         """执行预设动作，兼容旧版 switch_preset。"""
