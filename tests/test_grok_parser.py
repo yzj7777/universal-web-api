@@ -1,6 +1,5 @@
 import json
 import re
-from pathlib import Path
 
 from app.core.parsers.grok_parser import GrokParser
 

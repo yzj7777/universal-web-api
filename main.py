@@ -25,27 +25,29 @@ if __name__ == "__main__":
 
 import asyncio
 import logging
+
 logging.getLogger("urllib3").setLevel(logging.WARNING)
-import socket
 import mimetypes
 import shutil
 import subprocess
 import threading
 import time
 import webbrowser
+from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
 from urllib.request import urlopen
-from contextlib import asynccontextmanager
-from app import __version__ as APP_VERSION
-from app import paths
-from app.core import get_browser
+
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse, FileResponse, Response
-# ================= 导入配置 =================
 
+from app import __version__ as APP_VERSION
+from app import paths
+from app.core import get_browser
+
+# ================= 导入配置 =================
 from app.core.config import AppConfig, get_logger, get_shared_file_log_handler
 from app.services.restart_guard import RestartGuard
 
@@ -230,6 +232,7 @@ def _has_existing_meaningful_pages(browser) -> bool:
         return False
 
     from urllib.parse import urlparse
+
     from app.utils.site_url import extract_remote_site_domain
 
     base_url = _get_local_startup_base_url().lower()
@@ -493,7 +496,7 @@ async def lifespan(app: FastAPI):
         logger.info("[startup] 以浏览器 worker 角色运行（仅供本机 API 进程调用）")
     _install_asyncio_exception_filter()
     logger.info("=" * 60)
-    logger.info("Universal Web-to-API 服务启动中...")       
+    logger.info("Universal Web-to-API 服务启动中...")
     # 启动时清理临时文件目录与调试日志目录
     try:
         from app.utils.file_paste import cleanup_temp_dir
@@ -529,7 +532,7 @@ async def lifespan(app: FastAPI):
         try:
             browser = get_browser(auto_connect=False)
             health = await asyncio.to_thread(browser.health_check)
-    
+
             if health["connected"]:
                 startup_blank_tab_id = _capture_startup_blank_tab_id(browser)
                 if is_restart:
@@ -567,7 +570,7 @@ async def lifespan(app: FastAPI):
                     logger.info(f"✅ 浏览器已连接 (检测到 {existing_tab_count} 个现有网页，跳过教程)")
             else:
                 logger.warning(f"⚠️ 浏览器未连接: {health.get('error', '未知')}")
-        
+
         except Exception as e:
             logger.warning(f"⚠️ 浏览器检查跳过: {e}")
 
@@ -972,18 +975,22 @@ async def media_file(
 # ================= 注册 API 路由（在 Dashboard 之后）=================
 
 from app.api import router as api_router
+
 app.include_router(api_router)
 
 # R2-6：worker 角色额外提供内部接口；API 进程模式下 /api/* 整体转发给 worker（中间件内按模式判断）
 from app.worker import is_worker_role as _is_worker_role
+
 if _is_worker_role():
     from app.worker.rpc_routes import router as worker_rpc_router
     app.include_router(worker_rpc_router)
 from app.worker.forwarding import WorkerForwardingMiddleware
+
 app.add_middleware(WorkerForwardingMiddleware)
 
 # R2-7：请求 ID 与 Prometheus 指标。最后注册 = 最外层，覆盖全部请求（纯 ASGI，不缓冲流式响应）
 from app.services.metrics import RequestMetricsMiddleware
+
 app.add_middleware(RequestMetricsMiddleware)
 
 

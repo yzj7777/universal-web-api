@@ -1,16 +1,15 @@
 """``/group`` 路由分组（由 app/api/tab_routes.py 拆出）。"""
 
-from typing import Optional, Any, Dict, List
-from fastapi import Request, HTTPException, Depends, Header, Query
+from typing import Any, Dict, List, Optional
+
+from fastapi import Depends, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
-from app.services.arena_direct_models import build_openai_model_entries, get_arena_direct_catalog_for_tab, list_arena_direct_models
+
 from app.api.deps import verify_service_auth
-from app.utils.site_url import normalize_exact_tab_url, route_domain_matches
-from app.utils.tab_route_groups import normalize_route_group_id, normalize_route_groups, route_group_member_key, route_groups_by_id
 from app.api.openai import runtime
 from app.api.openai.shared import (
-    ChatRequest,
     MODEL_LIST_CREATED,
+    ChatRequest,
     _build_route_model_entries_payload,
     _build_tab_resolution_headers,
     _read_browser_config,
@@ -22,6 +21,19 @@ from app.api.openai.shared import (
 from app.api.openai.url import (
     _chat_with_route_domain,
 )
+from app.services.arena_direct_models import (
+    build_openai_model_entries,
+    get_arena_direct_catalog_for_tab,
+    list_arena_direct_models,
+)
+from app.utils.site_url import normalize_exact_tab_url, route_domain_matches
+from app.utils.tab_route_groups import (
+    normalize_route_group_id,
+    normalize_route_groups,
+    route_group_member_key,
+    route_groups_by_id,
+)
+
 
 def _get_route_groups_from_config(config: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     payload = config if isinstance(config, dict) else _read_browser_config()

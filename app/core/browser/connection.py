@@ -1,24 +1,25 @@
 # app/core/browser/connection.py
 
+import contextlib
 import json
 import os
 import socket
 import threading
 import time
-import contextlib
-from typing import Optional, List, Dict, Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from app.core.driver.drission_internals import connect_existing_browser
-from app.core.config import logger, BrowserConstants, BrowserConnectionError, SSEFormatter
+from app.base.headless_probe import inspect_headless_or_windowless_browser as _inspect_headless_or_windowless_browser
 from app.core import cdp_hygiene
+from app.core.config import BrowserConnectionError, logger
 from app.core.driver import browser_driver
+from app.core.driver.drission_internals import connect_existing_browser
 
 # P0-2 / P0-4：运行期 CDP 卫生补丁（释放 run_js 对象结果、Network.enable 缓冲上限）
 cdp_hygiene.install()
 
 if TYPE_CHECKING:
-    from .main import BrowserCore
-    from app.core.tab_pool import TabPoolManager, TabSession
+
+    pass
 
 
 def _looks_like_transient_local_debug_error(error: Any) -> bool:
@@ -36,93 +37,6 @@ def _looks_like_transient_local_debug_error(error: Any) -> bool:
     return False
 
 
-def _inspect_headless_or_windowless_browser(port: int, timeout: float = 0.5) -> Optional[Dict[str, str]]:
-    """
-    探测指定端口的 Chromium 浏览器是否处于无头(Headless)或无窗口/缺少页面标签页状态。
-    返回 None 表示不是无头（或者端口未开放/非 Chromium）。
-    """
-    import urllib.request
-    import json
-
-    port_int = int(port)
-    # 显式使用空 ProxyHandler，避免系统或环境变量代理(如 HTTP_PROXY)拦截 loopback 探测
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-
-    # 1. 检查进程启动参数 (若 psutil 可用，优先确认是否明确声明了 --headless 或 --no-startup-window)
-    cmd_has_headless = False
-    cmd_has_no_startup_window = False
-    try:
-        import psutil
-        target_arg = f"--remote-debugging-port={port_int}"
-        for proc in psutil.process_iter(["pid", "cmdline"]):
-            try:
-                cmdline_list = proc.info.get("cmdline") or []
-                # 过滤 Chromium 子进程（renderer/gpu/utility 等子进程必然包含 --type=，主进程不包含）
-                if any(str(arg).startswith("--type=") for arg in cmdline_list):
-                    continue
-                cmdline = " ".join(cmdline_list)
-                if target_arg in cmdline:
-                    cmd_lower = cmdline.lower()
-                    if "--headless" in cmd_lower:
-                        cmd_has_headless = True
-                    if "--no-startup-window" in cmd_lower:
-                        cmd_has_no_startup_window = True
-                    if cmd_has_headless and cmd_has_no_startup_window:
-                        break
-            except Exception:
-                continue
-    except Exception:
-        pass
-
-    if cmd_has_headless:
-        return {"reason": "headless_arg", "detail": "浏览器启动参数显式包含 --headless"}
-
-    # 2. 检查 /json/version
-    version_url = f"http://127.0.0.1:{port_int}/json/version"
-    try:
-        req = urllib.request.Request(version_url, headers={"User-Agent": "UWAPI-Diagnostics"})
-        with opener.open(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
-    except Exception:
-        return None
-
-    browser_desc = str(data.get("Browser", "") or "")
-    user_agent = str(data.get("User-Agent", "") or "")
-    if "headless" in browser_desc.lower() or "headless" in user_agent.lower():
-        return {
-            "reason": "headless",
-            "detail": f"检测到无头浏览器 ({browser_desc or user_agent})",
-        }
-
-    # 3. 检查 /json 目标列表 (targets)
-    targets_url = f"http://127.0.0.1:{port_int}/json"
-    try:
-        req = urllib.request.Request(targets_url, headers={"User-Agent": "UWAPI-Diagnostics"})
-        with opener.open(req, timeout=timeout) as resp:
-            targets = json.loads(resp.read().decode("utf-8", errors="ignore"))
-            if isinstance(targets, list):
-                pages = [
-                    t for t in targets
-                    if isinstance(t, dict) and str(t.get("type", "")).lower() == "page"
-                ]
-                if not pages:
-                    if cmd_has_no_startup_window:
-                        return {
-                            "reason": "no_startup_window",
-                            "detail": "浏览器带有 --no-startup-window 参数且当前无前台可视页面",
-                        }
-                    other_types = sorted(list({
-                        str(t.get("type", "unknown"))
-                        for t in targets if isinstance(t, dict) and t.get("type")
-                    }))
-                    detail_types = ", ".join(other_types) if other_types else "无任何活动目标"
-                    return {
-                        "reason": "no_pages",
-                        "detail": f"无可视标签页（当前后台目标: {detail_types}）",
-                    }
-    except Exception:
-        pass
-
     return None
 
 
@@ -132,7 +46,7 @@ def _load_model_name_overrides_config() -> Optional[Dict[str, Any]]:
         return None
 
     try:
-        with open(config_path, "r", encoding="utf-8-sig") as f:
+        with open(config_path, encoding="utf-8-sig") as f:
             payload = json.load(f)
         return payload if isinstance(payload, dict) else None
     except Exception as e:
@@ -146,7 +60,7 @@ def _load_preset_overrides_config() -> Optional[Dict[str, Any]]:
         return None
 
     try:
-        with open(config_path, "r", encoding="utf-8-sig") as f:
+        with open(config_path, encoding="utf-8-sig") as f:
             payload = json.load(f)
         return payload if isinstance(payload, dict) else None
     except Exception as e:
@@ -170,12 +84,12 @@ def _load_tab_pool_config() -> Dict:
         "preset_overrides": {"urls": {}},
         "route_groups": [],
     }
-    
+
     # 从 browser_config.json 加载
     try:
         config_path = "config/browser_config.json"
         if os.path.exists(config_path):
-            with open(config_path, 'r', encoding='utf-8') as f:
+            with open(config_path, encoding='utf-8') as f:
                 file_config = json.load(f)
                 pool_config = file_config.get("tab_pool", {})
                 config.update(pool_config)
@@ -189,7 +103,7 @@ def _load_tab_pool_config() -> Dict:
     local_preset_overrides = _load_preset_overrides_config()
     if local_preset_overrides is not None:
         config["preset_overrides"] = local_preset_overrides
-    
+
     # 环境变量覆盖
     if os.getenv("MAX_TABS"):
         config["max_tabs"] = int(os.getenv("MAX_TABS"))
@@ -635,7 +549,7 @@ class BrowserConnectionMixin:
             name="browser-connection-watchdog",
         )
         self._watchdog_thread.start()
-    
+
     def health_check(self) -> Dict[str, Any]:
         result = {
             "status": "unhealthy",
@@ -644,7 +558,7 @@ class BrowserConnectionMixin:
             "tab_pool": None,
             "error": None
         }
-        
+
         try:
             if not self.get_browser_handle():
                 if not self._connect():
@@ -659,19 +573,19 @@ class BrowserConnectionMixin:
                 if not self._connect():
                     result["error"] = "无法连接到浏览器"
                     return result
-            
+
             result["status"] = "healthy"
             result["connected"] = True
-            
+
             if self._tab_pool:
                 result["tab_pool"] = self._tab_pool.get_status()
-        
+
         except Exception as e:
             result["error"] = str(e)
             self._connected = False
-        
+
         return result
-    
+
     def ensure_connection(self) -> bool:
         if self._connected:
             if self._probe_browser_connection():
@@ -681,13 +595,13 @@ class BrowserConnectionMixin:
             self.browser_handle = None
             self.page = None
             self._dispose_previous_browser_handle(previous_handle, "ensure_connection")
-        
+
         return self._connect()
-    
+
     def get_active_tab(self):
         """
         获取一个可用的标签页（兼容旧接口）
-        
+
         注意：新代码应使用 execute_workflow_with_session
         """
         # 生成临时任务 ID
@@ -701,33 +615,33 @@ class BrowserConnectionMixin:
     def get_temporary_tab(self, timeout: int = 30):
         """
         获取临时标签页的上下文管理器（推荐使用）
-    
+
         使用方式:
             with browser.get_temporary_tab() as tab:
                 elements = tab.eles(selector)
             # 退出 with 块后自动释放
-    
+
         Args:
             timeout: 获取标签页的超时时间（秒）
-    
+
         Yields:
             tab: 浏览器标签页对象
-    
+
         Raises:
             BrowserConnectionError: 无法获取可用标签页时抛出
         """
         task_id = f"temp_{time.time_ns()}"
         session = None
-    
+
         try:
             session = self.tab_pool.acquire(task_id, timeout=timeout)
-        
+
             if session is None:
                 raise BrowserConnectionError("无法获取可用标签页，服务繁忙请稍后重试")
-        
+
             logger.debug(f"[{session.id}] 临时标签页已分配")
             yield session.tab
-        
+
         finally:
             if session is not None:
                 self.tab_pool.release(session.id, expected_task_id=task_id)
@@ -742,23 +656,23 @@ class BrowserConnectionMixin:
     def _check_page_status(self, tab) -> Dict[str, Any]:
         """检查页面状态"""
         result = {"ready": True, "reason": None}
-        
+
         try:
             url = tab.url or ""
-            
+
             if not url or url in ("about:blank", "chrome://newtab/"):
                 result["ready"] = False
                 result["reason"] = "请先打开目标AI网站"
                 return result
-            
+
             error_indicators = ["chrome-error://", "about:neterror"]
             for indicator in error_indicators:
                 if indicator in url:
                     result["ready"] = False
                     result["reason"] = "页面加载错误"
                     return result
-        
+
         except Exception as e:
             logger.debug(f"页面状态检查异常: {e}")
-        
+
         return result

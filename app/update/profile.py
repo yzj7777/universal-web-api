@@ -13,10 +13,9 @@ clean_profile.py - 浏览器配置清理工具
 
 from __future__ import annotations
 
-import sys
 import shutil
+import sys
 from pathlib import Path
-
 
 # === 预防性路径配置 ===
 # 本文件位于 <root>/app/update/profile.py

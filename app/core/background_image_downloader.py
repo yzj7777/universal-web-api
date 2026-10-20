@@ -16,7 +16,7 @@ from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
-from urllib.parse import urlparse, urlsplit, urlunsplit
+from urllib.parse import urlparse, urlsplit
 
 import requests
 
@@ -26,7 +26,6 @@ from app.utils.remote_resource import (
     normalize_remote_http_url,
     remote_url_origin,
 )
-
 
 DEFAULT_IMAGE_ACCEPT = "image/avif,image/webp,image/apng,image/*,*/*;q=0.8"
 REMOTE_IMAGE_URL_TRAILING_WRAPPERS = ")]}"

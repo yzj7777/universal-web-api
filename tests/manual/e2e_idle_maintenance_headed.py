@@ -6,7 +6,13 @@ Windows / macOS 桌面环境可直接运行。需要 Chromium（UWAPI_TEST_CHROM
 
 期望最后一行：RESULT recycled | freed | froze | resumed
 """
-import glob, http.server, os, socket, sys, tempfile, threading, time
+import http.server
+import os
+import socket
+import sys
+import tempfile
+import threading
+import time
 
 os.environ.update({
     "BROWSER_IDLE_FREEZE_AFTER_SEC": "15",
@@ -30,8 +36,10 @@ srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 port = srv.server_address[1]
 
-from DrissionPage import ChromiumOptions, Chromium
+from DrissionPage import Chromium, ChromiumOptions
+
 from tests._real_browser import find_chrome
+
 chrome = find_chrome()
 if not chrome:
     sys.exit("no chromium found (set UWAPI_TEST_CHROME)")
@@ -60,8 +68,8 @@ def ensure_loaded(t, url):
         time.sleep(0.7)
     raise RuntimeError("page did not load: " + url)
 
-from app.core.tab_pool_parts.manager import TabPoolManager
 from app.core.tab_pool_parts import idle_maintenance as im
+from app.core.tab_pool_parts.manager import TabPoolManager
 
 mgr = TabPoolManager(browser_page=browser, max_tabs=3, min_tabs=1)
 mgr.initialize()

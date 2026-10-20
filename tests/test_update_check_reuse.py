@@ -3,6 +3,7 @@ import time
 from unittest.mock import Mock
 
 import pytest
+
 import updater
 from app.api import system
 from app.api.system import updates as system_updates

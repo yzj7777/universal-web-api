@@ -8,7 +8,9 @@ import json
 import re
 import urllib.request
 from pathlib import Path
+
 from playwright.async_api import async_playwright, expect
+
 ROOT = Path(__file__).resolve().parents[2]
 BASE = 'http://127.0.0.1:8000'
 DOMAIN = 'aistudio.google.com'

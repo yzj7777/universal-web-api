@@ -1,27 +1,34 @@
 """``app/api/system`` 的 diagnostics 分组（原 app/api/system.py 的一部分）。"""
 
-import os
-import re
-import time
 import asyncio
-import threading as _threading
-from pathlib import Path
-from typing import Optional, Any, Dict, List
-from fastapi import Request, HTTPException, Depends
-from app.core.config import AppConfig
-from app.core import BrowserConnectionError
-from app.api.deps import verify_dashboard_auth as verify_auth
-from app.utils.site_url import extract_remote_site_domain, route_domain_matches
-from app.core.driver import as_element, driver_for_tab
+import os
 import os as _os
+import re
+import threading as _threading
+import time
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 import psutil as _psutil
-from app.api.system import runtime
+from fastapi import Depends, HTTPException, Request
+
+# 从子模块直接导入而非 `from app.api.system import runtime`：
+# 后者要求 app.api.system 的 __init__ 先执行完，与 __init__ 导入本模块形成环。
+# 写成 `import ... as runtime` 既断开环，又保留 runtime.get_browser() 这种
+# 属性访问形式——测试用 monkeypatch.setattr(runtime, "get_browser", ...) 打桩，
+# 若改成 `from ... import get_browser` 拿到的是直接引用，桩会失效。
+import app.api.system.runtime as runtime
+from app.api.deps import verify_dashboard_auth as verify_auth
 from app.api.system.common import (
     _load_env_config_from_file,
     _read_json_object_or_400,
     logger,
     router,
 )
+from app.core import BrowserConnectionError
+from app.core.config import AppConfig
+from app.core.driver import as_element, driver_for_tab
+from app.utils.site_url import extract_remote_site_domain, route_domain_matches
 
 _PROJECT_PROCESS_CACHE: Dict[int, _psutil.Process] = {}
 
@@ -618,7 +625,7 @@ def _run_selector_test(
         return result
 
     except BrowserConnectionError as e:
-        return {"success": False, "count": 0, "message": f"浏览器未连接: {str(e)}"}
+        return {"success": False, "count": 0, "message": f"浏览器未连接: {e!s}"}
 
     except Exception as e:
         logger.error(f"测试选择器失败: {e}")

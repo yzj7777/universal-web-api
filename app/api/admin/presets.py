@@ -61,7 +61,7 @@ async def create_site_preset(
     try:
         from app.services.config_engine import config_engine
         success = config_engine.create_preset(domain, body.new_name, body.source_name)
-        
+
         if success:
             return {"success": True, "message": f"预设 '{body.new_name}' 已创建"}
         else:
@@ -135,7 +135,7 @@ async def delete_site_preset(
     try:
         from app.services.config_engine import config_engine
         success = config_engine.delete_preset(domain, preset_name)
-        
+
         if success:
             return {"success": True, "message": f"预设 '{preset_name}' 已删除"}
         else:

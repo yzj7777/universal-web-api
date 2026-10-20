@@ -2,17 +2,18 @@
 import copy
 import importlib.util
 import json
-import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-from app.core.workflow.flow_runtime import FlowProgram, validate_workflow
+
 from app.core.workflow.executor import WorkflowExecutor
+from app.core.workflow.flow_runtime import FlowProgram, validate_workflow
 
 ROOT=Path(__file__).resolve().parents[1]
 BEFORE=json.loads((ROOT/'docs/migrations/gemini-deepseek-v2.before.json').read_text())
 from tests._sites import shipped_sites, shipped_sites_at
+
 AFTER=shipped_sites()
 GEMINI='gemini.google.com'
 DEEPSEEK='chat.deepseek.com'
@@ -162,8 +163,10 @@ def ui_page():
 
 def run_on_page(page,preset):
     from types import SimpleNamespace
-    from app.core.workflow.flow_runtime import capture_page_state
+
     from playwright.sync_api import expect
+
+    from app.core.workflow.flow_runtime import capture_page_state
     class Element:
         def __init__(self,locator):self.locator=locator
         @property

@@ -14,7 +14,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.api.deps import verify_dashboard_auth, verify_dashboard_auth as verify_auth
+from app.api.deps import verify_dashboard_auth
+from app.api.deps import verify_dashboard_auth as verify_auth
 from app.api.tab_routes import (
     FOLLOW_DEFAULT_PRESET,
     TAB_POOL_ALLOCATION_OPTIONS,
@@ -85,7 +86,7 @@ class TabModelNameRequest(BaseModel):
 async def get_tab_pool_tabs(authenticated: bool = Depends(verify_auth)):
     """
     获取所有标签页及其持久编号和预设信息
-    
+
     返回格式：
     {
         "tabs": [
@@ -119,7 +120,7 @@ async def get_tab_pool_tabs(authenticated: bool = Depends(verify_auth)):
             exclusion_url = _get_tab_item_exclusion_url(tab_info, excluded_urls)
             tab_info["route_excluded"] = bool(exclusion_url)
             tab_info["route_exclusion_url"] = exclusion_url
-        
+
         # 🆕 为每个标签页附加可用预设列表
         try:
             from app.services.config_engine import config_engine
@@ -131,7 +132,7 @@ async def get_tab_pool_tabs(authenticated: bool = Depends(verify_auth)):
                 tab_info["default_preset"] = None
                 tab_info["effective_preset_name"] = tab_info.get("preset_name")
                 tab_info["is_using_default_preset"] = not bool(tab_info.get("preset_name"))
-        
+
         return {
             "tabs": tabs,
             "count": len(tabs),
@@ -360,9 +361,9 @@ async def set_tab_preset(
         tab_info = _get_tab_info_by_index(browser, tab_index)
         if tab_info is None:
             raise HTTPException(status_code=404, detail=f"标签页 #{tab_index} 不存在")
-        
+
         preset_value = None if body.preset_name == FOLLOW_DEFAULT_PRESET else body.preset_name
-        
+
         domain = str(tab_info.get("current_domain") or tab_info.get("route_domain") or "").strip()
         if preset_value:
             try:
@@ -402,7 +403,7 @@ async def set_tab_preset(
 
         preset_label = "跟随站点默认预设" if preset_value is None else body.preset_name
         return {"success": True, "message": f"标签页 #{tab_index} 已切换到预设: {preset_label}"}
-    
+
     except HTTPException:
         raise
     except Exception as e:

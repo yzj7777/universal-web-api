@@ -2,9 +2,9 @@ import asyncio
 from types import SimpleNamespace
 
 from app.api import tab_routes
+from app.api.admin import pool as tab_pool_admin
 from app.api.openai import group as tab_group_routes
 from app.api.openai import runtime as tab_runtime
-from app.api.admin import pool as tab_pool_admin
 from app.core.browser.workflow import BrowserWorkflowMixin
 from app.services.request_manager import RequestContext
 from app.utils.tab_route_groups import normalize_route_groups

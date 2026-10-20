@@ -17,11 +17,11 @@
 from __future__ import annotations
 
 import json
-import tempfile
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -254,9 +254,17 @@ def apply_drissionpage_patch() -> bool:
     result = subprocess.run(
         [sys.executable, str(patch_script)], cwd=str(PROJECT_ROOT), check=False
     )
+    if result.returncode == 2:
+        # 退出码 2 = 环境里没有 DrissionPage / 定位不到 Listener 源码，
+        # 与"找到了但补丁失败"区分开，避免给出误导性的排查方向。
+        _log("[WARN] 未找到 DrissionPage，跳过补丁")
+        _log("       DrissionPage 是硬依赖，请执行 uv sync 安装")
+        _log()
+        return False
     if result.returncode != 0:
-        _log("[WARN] 补丁应用失败，网络监听模式可能触发 CF 检测")
+        _log("[WARN] 补丁应用失败或复核未通过，网络监听模式不可用")
         _log("       项目仍可正常运行（DOM 模式不受影响）")
+        _log("       常见原因：DrissionPage 升级后源码结构变化，详见上方输出")
         _log()
         return False
     _log()

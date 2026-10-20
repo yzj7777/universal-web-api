@@ -19,7 +19,17 @@
 freeze_lifted.undetected == 0 且 sync_failed == 0；groups 里前台 / 后台的点击延迟与 --no-freeze 对照组同一量级。
 UWAPI_TRACE=1 时，发现“标记冻结但页面在跑”会打印该标签页最近的 CDP 调用时间线。
 """
-import argparse, http.server, json, os, random, socket, statistics, sys, tempfile, threading, time, traceback
+import argparse
+import http.server
+import json
+import os
+import random
+import socket
+import sys
+import tempfile
+import threading
+import time
+import traceback
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--tabs", type=int, default=4)
@@ -73,7 +83,8 @@ srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), H)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 port = srv.server_address[1]
 
-from DrissionPage import ChromiumOptions, Chromium
+from DrissionPage import Chromium, ChromiumOptions
+
 from tests._real_browser import find_chrome
 
 chrome = find_chrome()
@@ -114,9 +125,8 @@ def ensure_loaded(t, url):
     raise RuntimeError("page did not load: " + url)
 
 
-from app.core.tab_pool_parts.manager import TabPoolManager
 from app.core.tab_pool_parts import idle_maintenance as im
-from app.core.tab_pool_parts.session import TabStatus
+from app.core.tab_pool_parts.manager import TabPoolManager
 from app.utils.human_mouse import cdp_precise_click, human_scroll
 
 _resume_times = []

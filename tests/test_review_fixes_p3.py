@@ -9,7 +9,6 @@ from pathlib import Path
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # B6 · 非有限数值配置不再 OverflowError
 # ---------------------------------------------------------------------------
@@ -108,8 +107,9 @@ def test_b4_chat_request_rejects_n_greater_than_one():
 def test_b4_api_returns_openai_style_422(monkeypatch):
     import asyncio
 
-    import main
     from httpx import ASGITransport, AsyncClient
+
+    import main
 
     for name in ("AUTH_ENABLED", "AUTH_TOKEN"):
         monkeypatch.delenv(name, raising=False)
@@ -133,7 +133,7 @@ def test_h7_annotations_resolvable():
     import typing
 
     import main
-    from app.runtime import browser_launcher, bootstrap, relaunch
+    from app.runtime import bootstrap, browser_launcher, relaunch
     from app.utils import model_routing
 
     for mod in (main, browser_launcher, bootstrap, relaunch, model_routing):
@@ -247,10 +247,10 @@ class _FakeBrowser:
 def _s7_get(monkeypatch, path, client_host, headers=None, env=None, browser=None):
     import asyncio
 
-    import main
-    from app.api import system
-    from app.api.system import runtime as system_runtime
     from httpx import ASGITransport, AsyncClient
+
+    import main
+    from app.api.system import runtime as system_runtime
 
     for name in ("AUTH_TOKEN", "DASHBOARD_AUTH_TOKEN", "AUTH_ENABLED", "TRUST_PROXY_HEADERS"):
         monkeypatch.delenv(name, raising=False)

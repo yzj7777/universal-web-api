@@ -4,28 +4,28 @@ Universal Web-to-API 自动更新模块 v2.1
 修复：临时文件处理 + GitHub 重定向处理
 """
 
-import os
-import sys
-import json
 import fnmatch
 import hashlib
 import hmac
-import shutil
-import zipfile
-import tempfile
-import urllib.request
-import urllib.error
-import time
+import json
+import os
+import posixpath
 import re
+import shutil
 import ssl
 import stat
-from pathlib import Path
-from pathlib import PurePosixPath
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+import zipfile
 from datetime import datetime
-from typing import Optional, Tuple
 from http.client import IncompleteRead
+from pathlib import Path, PurePosixPath
+from typing import Optional, Tuple
 from urllib.parse import urlparse
-import posixpath
+
 from app.update.preserve import (
     build_effective_preserve_patterns,
     get_default_update_preserve_patterns,
@@ -114,24 +114,24 @@ def http_request_with_retry(url: str, headers: dict = None, timeout: int = API_T
     """HTTP 请求，带重试机制"""
     if headers is None:
         headers = {}
-    
+
     headers.setdefault('User-Agent', 'Universal-Web-API-Updater/2.1')
     gh_token = os.getenv('GITHUB_TOKEN', '').strip()
     if gh_token and 'api.github.com' in url and 'Authorization' not in headers:
         headers['Authorization'] = f'Bearer {gh_token}'
-    
+
     for attempt in range(MAX_RETRIES):
         try:
             if attempt > 0:
                 log_info(f"重试请求 ({attempt + 1}/{MAX_RETRIES})...")
                 time.sleep(RETRY_DELAY)
-            
+
             req = urllib.request.Request(url, headers=headers)
-            
+
             opener = get_opener()
             with opener.open(req, timeout=timeout) as response:
                 return response.read()
-                    
+
         except IncompleteRead as e:
             log_warning(f"数据读取不完整: {len(e.partial)} bytes")
             if e.partial and len(e.partial) > 100:
@@ -144,46 +144,46 @@ def http_request_with_retry(url: str, headers: dict = None, timeout: int = API_T
             log_error(f"网络错误: {e.reason}")
         except Exception as e:
             log_error(f"请求失败: {e}")
-    
+
     return None
 
 def normalize_version(version: str) -> str:
     """标准化版本号格式"""
     version = version.strip().lstrip('vV').strip()
-    
+
     match = re.match(r'^(\d+)\.(\d{2,})$', version)
     if match:
         major = match.group(1)
         rest = match.group(2)
         if len(rest) == 2:
             version = f"{major}.{rest[0]}.{rest[1]}"
-    
+
     parts = version.split('.')
     while len(parts) < 3:
         parts.append('0')
-    
+
     result_parts = []
     for p in parts[:3]:
         try:
             result_parts.append(str(int(p)))
         except ValueError:
             result_parts.append('0')
-    
+
     return '.'.join(result_parts)
 
 def get_current_version() -> str:
     """获取当前版本号"""
     version_file = PROJECT_ROOT / "VERSION"
-    
+
     if version_file.exists():
         return normalize_version(version_file.read_text().strip())
-    
+
     env_file = PROJECT_ROOT / ".env"
     if env_file.exists():
         for line in env_file.read_text().splitlines():
             if line.startswith("CURRENT_VERSION="):
                 return normalize_version(line.split("=", 1)[1].strip())
-    
+
     return "0.0.0"
 
 def parse_version(version: str) -> Tuple[int, ...]:
@@ -198,7 +198,7 @@ def compare_versions(v1: str, v2: str) -> int:
     """比较版本号"""
     p1 = parse_version(v1)
     p2 = parse_version(v2)
-    
+
     if p1 > p2:
         return 1
     elif p1 < p2:
@@ -208,14 +208,14 @@ def compare_versions(v1: str, v2: str) -> int:
 def fetch_latest_release(repo: str) -> Optional[dict]:
     """获取最新 Release 信息"""
     api_url = f"{GITHUB_API_BASE}/{repo}/releases/latest"
-    
+
     log_info(f"请求 GitHub API: {api_url}")
-    
+
     data = http_request_with_retry(
         api_url,
         headers={'Accept': 'application/vnd.github.v3+json'}
     )
-    
+
     if data:
         try:
             release_info = json.loads(data.decode('utf-8'))
@@ -223,7 +223,7 @@ def fetch_latest_release(repo: str) -> Optional[dict]:
             return release_info
         except json.JSONDecodeError as e:
             log_error(f"JSON 解析失败: {e}")
-    
+
     return None
 
 def get_release_zip_asset(release: dict, repo: str) -> Optional[dict]:
@@ -303,32 +303,32 @@ def download_file_robust(
     修复：临时文件处理 + GitHub 重定向
     """
     log_info(f"下载 URL: {url}")
-    
+
     # 确保目标目录存在
     dest_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     for attempt in range(MAX_RETRIES):
         try:
             if attempt > 0:
                 log_info(f"重试下载 ({attempt + 1}/{MAX_RETRIES})...")
                 time.sleep(RETRY_DELAY * attempt)  # 递增延迟
-            
+
             # 构建请求
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Accept': 'application/octet-stream, application/zip, */*',
             }
             req = urllib.request.Request(url, headers=headers)
-            
+
             # 使用默认 TLS 校验与标准重定向处理
             opener = get_opener()
             response = opener.open(req, timeout=DOWNLOAD_TIMEOUT)
-            
+
             # 获取最终 URL（处理重定向后）
             final_url = response.geturl()
             if final_url != url:
                 log_info(f"重定向到: {final_url[:80]}...")
-            
+
             # 获取文件信息
             total_size = int(response.headers.get('content-length', 0))
             content_type = response.headers.get('content-type', 'unknown')
@@ -336,20 +336,20 @@ def download_file_robust(
                 response.close()
                 log_error(f"更新包超过大小限制: {total_size:,} bytes")
                 return False
-            
+
             log_debug(f"Content-Type: {content_type}")
             log_debug(f"Content-Length: {total_size}")
-            
+
             # 检查是否是 HTML（可能是错误页面）
             if 'text/html' in content_type.lower():
                 log_warning("服务器返回 HTML，可能是错误页面")
                 # 仍然尝试下载，后面会验证
-            
+
             # 使用临时文件下载
             temp_path = dest_path.parent / f".downloading_{dest_path.name}"
             downloaded = 0
             digest = hashlib.sha256()
-            
+
             try:
                 with open(temp_path, 'wb') as f:
                     while True:
@@ -362,7 +362,7 @@ def download_file_robust(
                             downloaded += len(chunk)
                             if downloaded > max_bytes:
                                 raise ValueError(f"更新包超过大小限制: {downloaded:,} bytes")
-                            
+
                             # 显示进度
                             if total_size > 0:
                                 percent = min(100, downloaded * 100 // total_size)
@@ -375,7 +375,7 @@ def download_file_robust(
                             else:
                                 size_kb = downloaded / 1024
                                 print(f"\r    已下载: {size_kb:.1f} KB", end='', flush=True)
-                                
+
                         except IncompleteRead as e:
                             if e.partial:
                                 f.write(e.partial)
@@ -383,21 +383,21 @@ def download_file_robust(
                                 downloaded += len(e.partial)
                             log_warning(f"\n读取中断，已下载 {downloaded} bytes")
                             break
-                
+
                 print()  # 换行
                 response.close()
-                
+
             except Exception as e:
                 log_error(f"写入文件失败: {e}")
                 if temp_path.exists():
                     temp_path.unlink()
                 continue
-            
+
             # 检查下载的文件
             if not temp_path.exists():
                 log_error("临时文件不存在")
                 continue
-            
+
             actual_size = temp_path.stat().st_size
             log_info(f"下载完成: {actual_size:,} bytes")
 
@@ -414,31 +414,31 @@ def download_file_robust(
                 temp_path.unlink()
                 return False
             log_success(f"更新包 SHA-256 校验通过: {actual_digest}")
-            
+
             # 检查文件大小
             if actual_size < 1000:
                 log_error(f"文件太小，可能是错误响应")
                 # 显示文件内容
                 try:
-                    with open(temp_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    with open(temp_path, encoding='utf-8', errors='ignore') as f:
                         content = f.read(500)
                     log_error(f"文件内容: {content[:200]}")
                 except:
                     pass
                 temp_path.unlink()
                 continue
-            
+
             if total_size > 0 and actual_size < total_size * 0.9:
                 log_warning(f"文件可能不完整: {actual_size}/{total_size}")
                 temp_path.unlink()
                 continue
-            
+
             # 检查文件类型（魔数）
             with open(temp_path, 'rb') as f:
                 header = f.read(10)
-            
+
             log_debug(f"文件头 (hex): {header[:10].hex()}")
-            
+
             # ZIP: PK\x03\x04 或 PK\x05\x06 (空zip) 或 PK\x07\x08
             if header[:2] == b'PK':
                 log_debug("检测到 ZIP 文件格式")
@@ -447,7 +447,7 @@ def download_file_robust(
             elif header[:5] == b'<!DOC' or header[:5] == b'<html' or header[:5] == b'<HTML':
                 log_error("下载的是 HTML 页面！")
                 try:
-                    with open(temp_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    with open(temp_path, encoding='utf-8', errors='ignore') as f:
                         html_content = f.read(500)
                     if 'Not Found' in html_content:
                         log_error("GitHub 返回 404 Not Found")
@@ -459,7 +459,7 @@ def download_file_robust(
                     pass
                 temp_path.unlink()
                 continue
-            
+
             # 验证 ZIP 完整性
             try:
                 with zipfile.ZipFile(temp_path, 'r') as zf:
@@ -469,19 +469,19 @@ def download_file_robust(
                         log_error(f"ZIP 文件损坏: {bad_file}")
                         temp_path.unlink()
                         continue
-                    
+
                     file_list = zf.namelist()
                     log_info(f"ZIP 包含 {len(file_list)} 个文件")
-                    
+
                     if len(file_list) == 0:
                         log_error("ZIP 文件为空")
                         temp_path.unlink()
                         continue
-                    
+
                     # 显示前几个文件
                     for f in file_list[:3]:
                         log_debug(f"  - {f}")
-                        
+
             except zipfile.BadZipFile as e:
                 log_error(f"不是有效的 ZIP 文件: {e}")
                 # 显示文件开头内容用于调试
@@ -493,15 +493,15 @@ def download_file_robust(
                     pass
                 temp_path.unlink()
                 continue
-            
+
             # 一切正常，移动到目标位置
             if dest_path.exists():
                 dest_path.unlink()
             shutil.move(str(temp_path), str(dest_path))
-            
+
             log_success(f"文件保存到: {dest_path.name}")
             return True
-            
+
         except urllib.error.HTTPError as e:
             print()
             log_error(f"HTTP 错误 {e.code}: {e.reason}")
@@ -518,7 +518,7 @@ def download_file_robust(
             log_error(f"下载错误: {type(e).__name__}: {e}")
             import traceback
             log_debug(traceback.format_exc())
-        
+
         # 清理临时文件
         temp_path = dest_path.parent / f".downloading_{dest_path.name}"
         if temp_path.exists():
@@ -526,7 +526,7 @@ def download_file_robust(
                 temp_path.unlink()
             except:
                 pass
-    
+
     return False
 
 def _iter_project_backup_items(project_dir: Path, backup_dir: Optional[Path] = None) -> list[Path]:
@@ -547,11 +547,11 @@ def backup_current(project_dir: Path) -> Optional[Path]:
     """备份当前项目快照，便于更新失败后回滚。"""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_dir = project_dir / f"backup_{timestamp}"
-    
+
     try:
         backup_dir.mkdir(exist_ok=True)
         backup_items = _iter_project_backup_items(project_dir, backup_dir)
-        
+
         count = 0
         for src in backup_items:
             if src.exists():
@@ -561,7 +561,7 @@ def backup_current(project_dir: Path) -> Optional[Path]:
                 else:
                     shutil.copy2(src, dst)
                 count += 1
-        
+
         if count > 0:
             log_success(f"已备份 {count} 项到: {backup_dir.name}")
             return backup_dir
@@ -638,7 +638,7 @@ def should_preserve(path: Path, preserve_patterns: list) -> bool:
             continue
         if path_str == pattern or path_str.startswith(pattern + "/"):
             return True
-    
+
     return False
 
 def load_commands_config(path: Path) -> list:
@@ -647,7 +647,7 @@ def load_commands_config(path: Path) -> list:
         return []
 
     try:
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, encoding='utf-8') as f:
             data = json.load(f)
 
         if isinstance(data, dict):
@@ -666,7 +666,7 @@ def load_sites_config(path: Path) -> dict:
         return {}
 
     try:
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, encoding='utf-8') as f:
             data = json.load(f)
         if isinstance(data, dict):
             return data
@@ -940,32 +940,32 @@ def extract_and_update(zip_path: Path, project_dir: Path, preserve: list) -> boo
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            
+
             log_info("解压更新包...")
             with zipfile.ZipFile(zip_path, 'r') as zf:
                 _safe_extract_zip(zf, temp_path)
-            
+
             # 找根目录
             extracted = list(temp_path.iterdir())
             log_debug(f"解压内容: {[e.name for e in extracted]}")
-            
+
             if len(extracted) == 1 and extracted[0].is_dir():
                 source_dir = extracted[0]
                 log_info(f"使用目录: {source_dir.name}")
             else:
                 source_dir = temp_path
-            
+
             log_info("应用更新...")
             updated = 0
             skipped = 0
             # 必须在拷贝新的 index.json 之前读出旧清单：据此判断用户是否改过各站点文件
             old_site_index = load_site_index(project_dir / SITES_INDEX_PATH)
             site_stats = {"added": 0, "replaced": 0, "merged": 0}
-            
+
             for src_item in source_dir.rglob('*'):
                 if src_item.is_dir():
                     continue
-                
+
                 rel_path = src_item.relative_to(source_dir)
                 dst_item = project_dir / rel_path
 
@@ -986,11 +986,11 @@ def extract_and_update(zip_path: Path, project_dir: Path, preserve: list) -> boo
                     merge_command_file(src_item, dst_item)
                     updated += 1
                     continue
-                
+
                 dst_item.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src_item, dst_item)
                 updated += 1
-            
+
             if any(site_stats.values()):
                 log_info(
                     f"站点配置: 新增 {site_stats['added']} 个, 未改动直接更新 {site_stats['replaced']} 个, "
@@ -998,7 +998,7 @@ def extract_and_update(zip_path: Path, project_dir: Path, preserve: list) -> boo
                 )
             log_success(f"更新 {updated} 个文件, 保留 {skipped} 个")
             return True
-            
+
     except Exception as e:
         log_error(f"更新失败: {e}")
         import traceback
@@ -1030,10 +1030,10 @@ def _write_update_check_result(repo: str, release: Optional[dict]) -> None:
 def check_and_update(repo: str = None, force: bool = False, preserve: list = None) -> bool:
     """检查并执行更新"""
     project_dir = PROJECT_ROOT
-    
+
     if repo is None:
         repo = os.getenv('GITHUB_REPO', DEFAULT_REPO)
-    
+
     if preserve is None:
         preserve_str = os.getenv('UPDATE_PRESERVE', '')
         if preserve_str:
@@ -1042,38 +1042,38 @@ def check_and_update(repo: str = None, force: bool = False, preserve: list = Non
             preserve = build_effective_preserve_patterns(
                 load_update_preserve_settings().get("selected_patterns", DEFAULT_PRESERVE.copy())
             )
-    
+
     print()
     print("=" * 55)
     print("  Universal Web-to-API Auto Updater v2.1")
     print("=" * 55)
     print()
-    
+
     current_version = get_current_version()
     log_info(f"当前版本: v{current_version}")
     log_info(f"检查仓库: {repo}")
-    
+
     release = fetch_latest_release(repo)
     _write_update_check_result(repo, release)
-    
+
     if not release:
         log_warning("无法获取版本信息")
         print()
         return False
-    
+
     latest_raw = release.get('tag_name', 'v0.0.0')
     latest_version = normalize_version(latest_raw)
     log_info(f"最新版本: v{latest_version} (tag: {latest_raw})")
-    
+
     if not force and compare_versions(current_version, latest_version) >= 0:
         log_success("已是最新版本")
         print()
         return False
-    
+
     print()
     print(colored(f"  >>> 发现新版本: v{current_version} -> v{latest_version}", Colors.YELLOW))
     print()
-    
+
     # 显示更新说明
     notes = release.get('body', '')
     if notes:
@@ -1081,7 +1081,7 @@ def check_and_update(repo: str = None, force: bool = False, preserve: list = Non
         for line in notes.split('\n')[:10]:
             print(f"    {line}")
         print()
-    
+
     # 获取带可信摘要的精确 Release Asset
     asset = get_release_zip_asset(release, repo)
     download_url = str((asset or {}).get('browser_download_url') or '')
@@ -1091,18 +1091,18 @@ def check_and_update(repo: str = None, force: bool = False, preserve: list = Non
     if not download_url or not expected_sha256:
         log_error("无法获取下载链接")
         return False
-    
+
     print()
     log_info(f"下载来源: {source_type}")
     log_info("开始下载...")
     print()
-    
+
     # 创建临时目录用于下载
     download_dir = project_dir / ".update_temp"
     download_dir.mkdir(exist_ok=True)
-    
+
     zip_path = download_dir / "update.zip"
-    
+
     backup_dir = None
     try:
         if not download_file_robust(
@@ -1112,31 +1112,31 @@ def check_and_update(repo: str = None, force: bool = False, preserve: list = Non
         ):
             log_error("下载失败")
             return False
-        
+
         print()
         backup_dir = backup_current(project_dir)
         if backup_dir is None:
             log_error("更新前备份失败，已中止更新")
             return False
-        
+
         if not extract_and_update(zip_path, project_dir, preserve):
             restore_from_backup(project_dir, backup_dir)
             return False
-        
+
         update_version_file(project_dir, latest_version)
-        
+
         print()
         print("=" * 55)
         print(colored(f"  ✓ 已成功更新到 v{latest_version}", Colors.GREEN))
         print("=" * 55)
         print()
-        
+
         return True
     except Exception:
         if backup_dir is not None:
             restore_from_backup(project_dir, backup_dir)
         raise
-        
+
     finally:
         # 清理临时目录
         if download_dir.exists():
@@ -1276,36 +1276,36 @@ def main():
 
     """命令行入口"""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description='自动更新工具 v2.1')
     parser.add_argument('--force', '-f', action='store_true', help='强制更新')
     parser.add_argument('--repo', '-r', type=str, help='GitHub 仓库')
     parser.add_argument('--check-only', '-c', action='store_true', help='仅检查')
     parser.add_argument('--version', '-v', action='store_true', help='显示版本')
     parser.add_argument('--debug', '-d', action='store_true', help='调试模式')
-    
+
     args = parser.parse_args()
-    
+
     if args.debug:
         os.environ['DEBUG'] = '1'
-    
+
     try:
         from dotenv import load_dotenv
         load_dotenv()
     except ImportError:
         pass
-    
+
     if args.version:
         print(f"v{get_current_version()}")
         sys.exit(0)
-    
+
     if args.check_only:
         current = get_current_version()
         release = fetch_latest_release(args.repo or os.getenv('GITHUB_REPO', DEFAULT_REPO))
-        
+
         if release:
             latest = normalize_version(release.get('tag_name', '0'))
-            
+
             print(f"\n[Release 信息]")
             print(f"  Tag: {release.get('tag_name')}")
             assets = release.get('assets', [])
@@ -1314,7 +1314,7 @@ def main():
                 size_kb = asset.get('size', 0) / 1024
                 print(f"    - {asset.get('name')} ({size_kb:.1f} KB)")
             print()
-            
+
             if compare_versions(current, latest) < 0:
                 print(f"可更新: v{current} -> v{latest}")
                 sys.exit(1)
@@ -1324,7 +1324,7 @@ def main():
         else:
             print("检查失败")
             sys.exit(2)
-    
+
     updated = check_and_update(repo=args.repo, force=args.force)
     sys.exit(0 if updated else 1)
 

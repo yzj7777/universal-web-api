@@ -187,7 +187,7 @@ def _normalize_response_message_content(content: Any) -> Any:
                 leading_text_parts.append(text)
             continue
 
-        from app.utils.attachments import normalize_attachment_part, AttachmentError
+        from app.utils.attachments import AttachmentError, normalize_attachment_part
         try:
             attachment = normalize_attachment_part(part)
         except AttachmentError as exc:
@@ -342,7 +342,7 @@ def _responses_tool_output_fallback_content(
         return [{"type": "text", "text": f"{header}\n"}] + output
     if isinstance(output, dict):
         output = json.dumps(output, ensure_ascii=False)
-    return f"{header}\n{str(output or '')}".strip()
+    return f"{header}\n{output or ''!s}".strip()
 
 
 def _response_content_part_from_media_item(item: Any, index: int) -> Optional[Dict[str, Any]]:

@@ -7,70 +7,39 @@ app/api/chat.py - 核心聊天 API
 - 模型列表
 """
 
-import json
+import asyncio
 import codecs
 import contextlib  # 修复(7)：用于 aclosing 确保内部异步生成器及时清理
 import copy
+import json
 import os
+import queue
 import random
 import re
-import time
-import asyncio
-import queue
 import threading
+import time
 import uuid
 from collections import OrderedDict
-from typing import Optional, Any, Dict, List, Callable, AsyncIterator
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
-from fastapi import APIRouter, Request, HTTPException, Header, Depends
-from fastapi.responses import JSONResponse, StreamingResponse as StarletteStreamingResponse
-from app.api.streaming_response import RequestStreamingResponse as StreamingResponse
-from app.core.chat_job import PROTOCOL_OPENAI_RESPONSES, job_for, use_chat_job, with_chat_job
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
+from fastapi.responses import StreamingResponse as StarletteStreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
-from app.core.config import _request_context, get_logger, SSEFormatter
-from app.core import get_browser
-from app.services.request_manager import (
-    request_manager, 
-    RequestContext, 
-    RequestStatus, 
-    watch_client_disconnect,
-    cancel_storm_guard,
-)
-from app.services.request_lifecycle import (
-    TrackedWorkerExecutionCancelled,
-    request_finalization,
-    get_max_request_execute_time_sec,
-    cleanup_worker_thread_after_request,
-    mark_request_hard_timeout,
-    put_worker_queue_item,
-    run_in_request_context,
-    run_tracked_blocking_call,
-    wait_worker_queue_item,
-)
-from app.services.tool_calling import (
-    build_tool_completion_response,
-    complete_tool_calling_roundtrip_async,
-    decode_browser_non_stream_payload,
-    extract_tool_calling_assistant_content,
-    get_tool_calling_allow_media_postprocess,
-    has_tool_calling_request,
-    iter_tool_stream_chunks,
-    normalize_tool_request,
-    summarize_messages_for_debug,
+from app.api.deps import (
+    verify_dashboard_auth,
+    verify_service_auth,
+    verify_service_token,
 )
 from app.api.openai_responses_support import (
     _append_response_input_item,
-    _new_response_id,
-    _new_response_item_id,
-    _normalize_chat_style_tool_calls,
-    _response_function_call_item_from_tool_call,
-    _response_function_call_to_tool_call,
-    _response_message_item_from_content,
-    _response_message_item_from_text,
     _build_responses_usage,
     _chat_payload_to_responses_output,
     _is_genuine_task_cancellation,
+    _new_response_id,
+    _new_response_item_id,
+    _normalize_chat_style_tool_calls,
     _normalize_response_input_role,
     _normalize_response_message_content,
     _normalize_response_tool_choice,
@@ -78,6 +47,10 @@ from app.api.openai_responses_support import (
     _normalize_responses_text_format,
     _normalize_responses_tools,
     _response_content_part_from_media_item,
+    _response_function_call_item_from_tool_call,
+    _response_function_call_to_tool_call,
+    _response_message_item_from_content,
+    _response_message_item_from_text,
     _responses_completion_status_from_chat_payload,
     _responses_error_payload,
     _responses_principal_from_request,
@@ -85,7 +58,16 @@ from app.api.openai_responses_support import (
     _responses_tool_output_can_follow_openai,
     _responses_tool_output_fallback_content,
 )
-
+from app.api.openai_stop import (
+    apply_stop_sequences_to_text,
+    build_stop_sequence_stream_state,
+    extract_openai_sse_error_message,
+    filter_openai_stop_sse_chunk,
+    flush_openai_stop_state,
+    iter_openai_sse_payloads,
+    sse_chunk_has_done,
+    sse_frame_data_text,
+)
 from app.api.stream_helpers import (
     _dedupe_media_items,
     _extract_assistant_content,
@@ -100,29 +82,47 @@ from app.api.stream_helpers import (
     _pack_error,
     _pack_error_done,
 )
-from app.api.openai_stop import (
-    apply_stop_sequences_to_text,
-    build_stop_sequence_stream_state,
-    extract_openai_sse_error_message,
-    filter_openai_stop_sse_chunk,
-    flush_openai_stop_state,
-    iter_openai_sse_payloads,
-    sse_chunk_has_done,
-    sse_frame_data_text,
-)
-from app.api.deps import (
-    verify_dashboard_auth,
-    verify_service_auth,
-    verify_service_token,
-)
+from app.api.streaming_response import RequestStreamingResponse as StreamingResponse
+from app.core import get_browser
+from app.core.chat_job import PROTOCOL_OPENAI_RESPONSES, job_for, use_chat_job, with_chat_job
+from app.core.config import SSEFormatter, _request_context, get_logger
 from app.services.catalog_routing import catalog_router, select_catalog_tab
 from app.services.error_metadata import (
-    resolve_error_metadata,
     build_error_response,
     is_manual_terminate,
     is_prompt_rejection_code,
+    resolve_error_metadata,
+)
+from app.services.request_lifecycle import (
+    TrackedWorkerExecutionCancelled,
+    cleanup_worker_thread_after_request,
+    get_max_request_execute_time_sec,
+    mark_request_hard_timeout,
+    put_worker_queue_item,
+    request_finalization,
+    run_in_request_context,
+    run_tracked_blocking_call,
+    wait_worker_queue_item,
+)
+from app.services.request_manager import (
+    RequestContext,
+    RequestStatus,
+    cancel_storm_guard,
+    request_manager,
+    watch_client_disconnect,
 )
 from app.services.text_filter import sanitize_response_text
+from app.services.tool_calling import (
+    build_tool_completion_response,
+    complete_tool_calling_roundtrip_async,
+    decode_browser_non_stream_payload,
+    extract_tool_calling_assistant_content,
+    get_tool_calling_allow_media_postprocess,
+    has_tool_calling_request,
+    iter_tool_stream_chunks,
+    normalize_tool_request,
+    summarize_messages_for_debug,
+)
 from app.utils.model_routing import collect_route_domain_models, inspect_model_route
 from app.utils.site_url import route_domain_matches
 
@@ -195,14 +195,17 @@ def _request_cancelled_response() -> JSONResponse:
 # 兼容性别名与适配函数（维持既有测试用例与下游依赖契约）
 # =========================================================================
 from app.services.error_metadata import (
-    _PROMPT_REJECTION_CODES as _ARENA_PROMPT_REJECTION_REASONS,
     _KNOWN_NON_RETRYABLE_CODES as _ARENA_NON_RETRYABLE_REASONS,
-    ARENA_PROMPT_REJECTED_CODE,
+)
+from app.services.error_metadata import (
+    _PROMPT_REJECTION_CODES as _ARENA_PROMPT_REJECTION_REASONS,
+)
+from app.services.error_metadata import (
     ARENA_NON_RETRYABLE_CODES,
     ARENA_PAGE_ERROR,
+    ARENA_PROMPT_REJECTED_CODE,
     ARENA_SEND_NO_TARGET_AFTER_RETRY,
 )
-
 
 # ================= 向前兼容适配层（供外部测试与兼容调用） =================
 _select_arena_catalog_tab = select_catalog_tab
@@ -260,7 +263,7 @@ def _arena_non_retryable_response(message: str, code: str) -> JSONResponse:
 
 
 # 动态目录函数符号导出（供 monkeypatch / 兼容测试使用）
-from app.services.arena_direct_models import (  # noqa: E402
+from app.services.arena_direct_models import (
     build_openai_model_entries,
     get_arena_direct_catalog_for_tab,
     get_arena_direct_model_public_id,
@@ -313,7 +316,7 @@ def _put_worker_queue_item(
 
 def _validate_image_inputs(messages: list) -> None:
     """Legacy name: validate all recognized attachment sources, never partial success."""
-    from app.utils.attachments import normalize_messages, AttachmentError
+    from app.utils.attachments import AttachmentError, normalize_messages
     try:
         normalize_messages(messages)
     except AttachmentError as exc:
@@ -330,7 +333,7 @@ class ChatRequest(BaseModel):
     @field_validator('workflow_variables')
     @classmethod
     def validate_workflow_variables(cls, value):
-        from app.core.workflow.flow_runtime import validate_inputs, FlowValidationError
+        from app.core.workflow.flow_runtime import FlowValidationError, validate_inputs
         try:
             return validate_inputs(value)
         except FlowValidationError as exc:
@@ -369,7 +372,7 @@ class ResponsesRequest(BaseModel):
     @field_validator('workflow_variables')
     @classmethod
     def validate_workflow_variables(cls, value):
-        from app.core.workflow.flow_runtime import validate_inputs, FlowValidationError
+        from app.core.workflow.flow_runtime import FlowValidationError, validate_inputs
         try:
             return validate_inputs(value)
         except FlowValidationError as exc:
@@ -1349,15 +1352,15 @@ def _apply_response_format(messages: list, response_format: dict) -> list:
             hint = hint_template.replace("{schema}", schema_str)
         except Exception:
             hint = hint_template.replace("{schema}", str(schema_content))
-    
+
     import copy
     new_messages = copy.deepcopy(messages)
-    
+
     for i in range(len(new_messages) - 1, -1, -1):
         msg = new_messages[i]
         if msg.get("role") == "user":
             content = msg.get("content", "")
-            
+
             if isinstance(content, str):
                 msg["content"] = content + hint
                 break
@@ -1370,7 +1373,7 @@ def _apply_response_format(messages: list, response_format: dict) -> list:
                 else:
                     content.append({"type": "text", "text": hint})
                 break
-    
+
     return new_messages
 
 
@@ -1488,7 +1491,7 @@ async def chat_completions(
         f"stream={body.stream}, messages_count={len(body.messages)}"
     )
 
-    from app.utils.attachments import normalize_messages, AttachmentError
+    from app.utils.attachments import AttachmentError, normalize_messages
     try:
         body.messages = normalize_messages(body.messages)
     except AttachmentError as exc:
@@ -1806,8 +1809,8 @@ async def _stream_with_lifecycle(
 
                 for chunk in gen:
                     chunk_counter += 1
-                    
-                    
+
+
                     if ctx.should_stop():
                         cancel_reason = str(ctx.cancel_reason or "unknown")
                         if cancel_reason in {"cleanup", "client_disconnected", "coroutine_cancelled"}:
@@ -1916,7 +1919,7 @@ async def _stream_with_lifecycle(
             has_images = '"images"' in chunk if isinstance(chunk, str) else False
             if has_images:
                 logger.info(f"[SEND] 发送包含图片的 chunk 给客户端")
-            
+
             outgoing_chunks = filter_openai_stop_sse_chunk(chunk, stop_state, body.model)
             for outgoing_chunk in outgoing_chunks:
                 emit_chunk, chunk_had_done = _split_sse_done_frame(outgoing_chunk)
@@ -2034,7 +2037,7 @@ async def _stream_with_lifecycle(
         logger.error(f"异常: {e}")
         request_manager.capture_error(ctx, e, code="internal_error")
         ctx.mark_failed(str(getattr(e, "code", None) or e))
-        yield _pack_error(f"执行错误: {str(e)}", "internal_error")
+        yield _pack_error(f"执行错误: {e!s}", "internal_error")
         yield _pack_done()
 
     finally:

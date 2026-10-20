@@ -27,7 +27,7 @@ IGNORED_PREFIXES = ("/static", "/download_images")
 
 
 def current_route_table() -> dict[str, list[str]]:
-    import main  # noqa: F401  —— 导入即完成全部 include_router
+    import main
 
     table: dict[str, list[str]] = {}
     for route in main.app.routes:

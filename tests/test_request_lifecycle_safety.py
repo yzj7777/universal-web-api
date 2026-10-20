@@ -6,13 +6,13 @@ import time
 
 from starlette.responses import StreamingResponse
 
-from app.api.anthropic_routes import _anthropic_stream_from_openai
 from app.api import tab_routes
+from app.api.anthropic_routes import _anthropic_stream_from_openai
 from app.api.openai import runtime as tab_runtime
-from app.services.request_manager import RequestContext
-from app.services.request_lifecycle import run_tracked_blocking_call
 from app.core.config import _request_context
 from app.services import result_event_bridge
+from app.services.request_lifecycle import run_tracked_blocking_call
+from app.services.request_manager import RequestContext
 
 
 def test_stream_context_reset_ignores_generator_finalization_in_another_context():
@@ -79,7 +79,6 @@ def test_tab_stream_headers_disable_proxy_transformations():
 def test_tab_stream_emits_initial_keepalive_before_browser_result(monkeypatch):
     """A slow tab acquisition must not make an upstream client retry forever."""
     from app.api import tab_routes
-    from app.core.config import SSEFormatter
 
     class _Request:
         async def is_disconnected(self):
