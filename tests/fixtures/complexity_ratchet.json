@@ -72,7 +72,6 @@
  "app/core/workflow/flow_runtime.py::Variables.condition": 36,
  "app/core/workflow/flow_runtime.py::Variables.resolve": 39,
  "app/runtime/browser_launcher.py::ensure_controlled_browser": 37,
- "app/services/arena_direct_models.py::_normalize_models": 56,
  "app/services/arena_direct_models.py::list_arena_direct_models": 40,
  "app/services/arena_direct_models.py::match_arena_direct_model": 43,
  "app/services/arena_model_catalog.py::filter_arena_catalog_models": 30,
