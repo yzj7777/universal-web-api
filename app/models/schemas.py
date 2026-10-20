@@ -979,6 +979,353 @@ def get_default_image_extraction_config() -> ImageExtractionConfig:
         "audio_capture_activity_threshold": 0.006,
         "audio_capture_activity_silence_seconds": 0.65,
     }
+def _validate_stream_config(config: Dict[str, Any]) -> bool:
+    """校验站点配置的 stream_config 段。
+
+    从 validate_site_config 中原样提出，方法体与提取前逐字节相同
+    （仅缩进变化）。只读取 config["stream_config"]，因此三段可以独立测试。
+
+    前置条件：config 必须包含 "stream_config" 键。"键是否存在"的检查留在
+    validate_site_config 的分派处（见 _SITE_CONFIG_VALIDATORS），此处不
+    重复判断——直接调用本函数时请先确认该段存在。
+    """
+    if not isinstance(config["stream_config"], dict):
+        return False
+
+    stream_config = config["stream_config"]
+
+    if "mode" in stream_config:
+        mode = str(stream_config["mode"]).strip().lower()
+        if mode not in {"dom", "network"}:
+            return False
+
+    if "hard_timeout" in stream_config and not isinstance(stream_config["hard_timeout"], (int, float)):
+        return False
+
+    if "request_transport" in stream_config:
+        request_transport = stream_config["request_transport"]
+        if not isinstance(request_transport, dict):
+            return False
+        if "mode" in request_transport and not isinstance(request_transport["mode"], str):
+            return False
+        if "profile" in request_transport and not isinstance(request_transport["profile"], str):
+            return False
+        if "options" in request_transport and not isinstance(request_transport["options"], dict):
+            return False
+
+    if "network" in stream_config:
+        if not isinstance(stream_config["network"], dict):
+            return False
+
+        network_config = stream_config["network"]
+        string_fields = [
+            "listen_pattern",
+            "stream_match_pattern",
+            "parser",
+        ]
+        numeric_fields = [
+            "first_response_timeout",
+            "silence_threshold",
+            "response_interval",
+        ]
+
+        for key in string_fields:
+            if key in network_config and not isinstance(network_config[key], str):
+                return False
+
+        for key in numeric_fields:
+            if key in network_config and not isinstance(network_config[key], (int, float)):
+                return False
+
+        if "stream_match_mode" in network_config:
+            mode = str(network_config["stream_match_mode"]).strip().lower()
+            if mode not in {"keyword", "regex"}:
+                return False
+
+    if "send_confirmation" in stream_config:
+        if not isinstance(stream_config["send_confirmation"], dict):
+            return False
+
+        send_confirmation = stream_config["send_confirmation"]
+        numeric_fields = [
+            "post_click_observe_window",
+            "pre_retry_probe_window",
+            "retry_observe_window",
+            "attachment_observe_window",
+            "retry_interval",
+            "retry_cooldown_window",
+        ]
+        int_fields = [
+            "max_retry_count",
+        ]
+        string_fields = [
+            "retry_key_combo",
+        ]
+        bool_fields = [
+            "retry_on_unconfirmed_send",
+            "accept_attachment_change",
+            "accept_attachment_disappear",
+            "accept_probe_confirmation",
+            "retry_block_on_stop_button",
+            "retry_block_if_generating",
+            "trust_network_activity",
+            "trust_generating_indicator",
+            "trust_send_disabled_with_input_shrink",
+        ]
+        enum_fields = {
+            "attachment_sensitivity": {"low", "medium", "high"},
+            "retry_action": {"click_send_btn", "key_press"},
+        }
+
+        for key in numeric_fields:
+            if key in send_confirmation and not isinstance(send_confirmation[key], (int, float)):
+                return False
+
+        for key in int_fields:
+            if key in send_confirmation and not isinstance(send_confirmation[key], int):
+                return False
+
+        for key in string_fields:
+            if key in send_confirmation and not isinstance(send_confirmation[key], str):
+                return False
+
+        for key in bool_fields:
+            if key in send_confirmation and not isinstance(send_confirmation[key], bool):
+                return False
+
+        for key, allowed_values in enum_fields.items():
+            if key not in send_confirmation:
+                continue
+            value = str(send_confirmation[key]).strip().lower()
+            if value not in allowed_values:
+                return False
+
+    if "attachment_monitor" in stream_config:
+        if not isinstance(stream_config["attachment_monitor"], dict):
+            return False
+
+        attachment_monitor = stream_config["attachment_monitor"]
+        numeric_fields = [
+            "idle_timeout",
+            "hard_max_wait",
+        ]
+        bool_fields = [
+            "require_attachment_present",
+            "require_upload_signal_before_ready",
+            "continue_once_on_unconfirmed_send",
+        ]
+        list_fields = [
+            "root_selectors",
+            "attachment_selectors",
+            "pending_selectors",
+            "status_selectors",
+            "content_exclusion_selectors",
+            "busy_text_markers",
+            "ignored_busy_text_markers",
+            "send_button_disabled_markers",
+        ]
+
+        for key in numeric_fields:
+            if key in attachment_monitor and not isinstance(attachment_monitor[key], (int, float)):
+                return False
+
+        for key in bool_fields:
+            if key in attachment_monitor and not isinstance(attachment_monitor[key], bool):
+                return False
+
+        for key in list_fields:
+            if key not in attachment_monitor:
+                continue
+            value = attachment_monitor[key]
+            if not isinstance(value, list):
+                return False
+            if any(not isinstance(item, str) for item in value):
+                return False
+    return True
+
+def _validate_file_paste(config: Dict[str, Any]) -> bool:
+    """校验站点配置的 file_paste 段。
+
+    从 validate_site_config 中原样提出，方法体与提取前逐字节相同
+    （仅缩进变化）。只读取 config["file_paste"]，因此三段可以独立测试。
+
+    前置条件：config 必须包含 "file_paste" 键。"键是否存在"的检查留在
+    validate_site_config 的分派处（见 _SITE_CONFIG_VALIDATORS），此处不
+    重复判断——直接调用本函数时请先确认该段存在。
+    """
+    if not isinstance(config["file_paste"], dict):
+        return False
+
+    file_paste = config["file_paste"]
+    if "enabled" in file_paste and not isinstance(file_paste["enabled"], bool):
+        return False
+    if "threshold" in file_paste and not isinstance(file_paste["threshold"], int):
+        return False
+    if "temp_file_type" in file_paste:
+        temp_file_type = str(file_paste["temp_file_type"]).strip().lower()
+        if temp_file_type not in {"txt", "pdf", "chunk", "error"}:
+            return False
+    if "hint_text" in file_paste and not isinstance(file_paste["hint_text"], str):
+        return False
+    if "txt_hint_text" in file_paste and not isinstance(file_paste["txt_hint_text"], str):
+        return False
+    if "pdf_hint_text" in file_paste and not isinstance(file_paste["pdf_hint_text"], str):
+        return False
+    if "error_hint_text" in file_paste and not isinstance(file_paste["error_hint_text"], str):
+        return False
+    if "reacquire_input_after_upload" in file_paste and not isinstance(file_paste["reacquire_input_after_upload"], bool):
+        return False
+    if "post_upload_input_selector" in file_paste and not isinstance(file_paste["post_upload_input_selector"], str):
+        return False
+    if "post_upload_settle" in file_paste and not isinstance(file_paste["post_upload_settle"], (int, float)):
+        return False
+    if "upload_signal_timeout" in file_paste and not isinstance(file_paste["upload_signal_timeout"], (int, float)):
+        return False
+    if "upload_signal_grace" in file_paste and not isinstance(file_paste["upload_signal_grace"], (int, float)):
+        return False
+    if "state_probe" in file_paste:
+        state_probe = file_paste["state_probe"]
+        if not isinstance(state_probe, dict):
+            return False
+        if "enabled" in state_probe and not isinstance(state_probe["enabled"], bool):
+            return False
+        if "code" in state_probe and not isinstance(state_probe["code"], str):
+            return False
+
+    if "send_confirmation" in file_paste:
+        send_confirmation = file_paste["send_confirmation"]
+        if not isinstance(send_confirmation, dict):
+            return False
+
+        numeric_fields = [
+            "post_click_observe_window",
+            "pre_retry_probe_window",
+            "retry_observe_window",
+            "attachment_observe_window",
+            "retry_interval",
+            "retry_cooldown_window",
+        ]
+        int_fields = [
+            "max_retry_count",
+        ]
+        string_fields = [
+            "retry_key_combo",
+        ]
+        bool_fields = [
+            "retry_on_unconfirmed_send",
+            "accept_attachment_change",
+            "accept_attachment_disappear",
+            "accept_probe_confirmation",
+            "retry_block_on_stop_button",
+            "retry_block_if_generating",
+            "trust_network_activity",
+            "trust_generating_indicator",
+            "trust_send_disabled_with_input_shrink",
+        ]
+        enum_fields = {
+            "attachment_sensitivity": {"low", "medium", "high"},
+            "retry_action": {"click_send_btn", "key_press"},
+        }
+
+        for key in numeric_fields:
+            if key in send_confirmation and not isinstance(send_confirmation[key], (int, float)):
+                return False
+
+        for key in int_fields:
+            if key in send_confirmation and not isinstance(send_confirmation[key], int):
+                return False
+
+        for key in string_fields:
+            if key in send_confirmation and not isinstance(send_confirmation[key], str):
+                return False
+
+        for key in bool_fields:
+            if key in send_confirmation and not isinstance(send_confirmation[key], bool):
+                return False
+
+        for key, allowed_values in enum_fields.items():
+            if key not in send_confirmation:
+                continue
+            value = str(send_confirmation[key]).strip().lower()
+            if value not in allowed_values:
+                return False
+
+    if "attachment_monitor" in file_paste:
+        attachment_monitor = file_paste["attachment_monitor"]
+        if not isinstance(attachment_monitor, dict):
+            return False
+
+        numeric_fields = [
+            "idle_timeout",
+            "hard_max_wait",
+        ]
+        bool_fields = [
+            "require_attachment_present",
+            "require_upload_signal_before_ready",
+            "continue_once_on_unconfirmed_send",
+        ]
+        list_fields = [
+            "root_selectors",
+            "attachment_selectors",
+            "pending_selectors",
+            "status_selectors",
+            "content_exclusion_selectors",
+            "busy_text_markers",
+            "ignored_busy_text_markers",
+            "send_button_disabled_markers",
+        ]
+
+        for key in numeric_fields:
+            if key in attachment_monitor and not isinstance(attachment_monitor[key], (int, float)):
+                return False
+
+        for key in bool_fields:
+            if key in attachment_monitor and not isinstance(attachment_monitor[key], bool):
+                return False
+
+        for key in list_fields:
+            if key not in attachment_monitor:
+                continue
+            value = attachment_monitor[key]
+            if not isinstance(value, list):
+                return False
+            if any(not isinstance(item, str) for item in value):
+                return False
+    return True
+
+def _validate_prompt_padding(config: Dict[str, Any]) -> bool:
+    """校验站点配置的 prompt_padding 段。
+
+    从 validate_site_config 中原样提出，方法体与提取前逐字节相同
+    （仅缩进变化）。只读取 config["prompt_padding"]，因此三段可以独立测试。
+
+    前置条件：config 必须包含 "prompt_padding" 键。"键是否存在"的检查留在
+    validate_site_config 的分派处（见 _SITE_CONFIG_VALIDATORS），此处不
+    重复判断——直接调用本函数时请先确认该段存在。
+    """
+    if not isinstance(config["prompt_padding"], dict):
+        return False
+
+    prompt_padding = config["prompt_padding"]
+    if "enabled" in prompt_padding and not isinstance(prompt_padding["enabled"], bool):
+        return False
+    if "marker_text" in prompt_padding and not isinstance(prompt_padding["marker_text"], str):
+        return False
+    if "segments_per_side" in prompt_padding and not isinstance(prompt_padding["segments_per_side"], int):
+        return False
+    if "random_insert_enabled" in prompt_padding and not isinstance(prompt_padding["random_insert_enabled"], bool):
+        return False
+    if "random_insert_chars" in prompt_padding and not isinstance(prompt_padding["random_insert_chars"], str):
+        return False
+    return True
+
+_SITE_CONFIG_VALIDATORS = (
+    ("stream_config", _validate_stream_config),
+    ("file_paste", _validate_file_paste),
+    ("prompt_padding", _validate_prompt_padding),
+)
+
+
 def validate_site_config(config: Dict[str, Any]) -> bool:
     """验证站点配置是否有效"""
     if "selectors" not in config or "workflow" not in config:
@@ -994,314 +1341,9 @@ def validate_site_config(config: Dict[str, Any]) -> bool:
         if not validate_workflow_step(step):
             return False
 
-    if "stream_config" in config:
-        if not isinstance(config["stream_config"], dict):
-            return False
-
-        stream_config = config["stream_config"]
-
-        if "mode" in stream_config:
-            mode = str(stream_config["mode"]).strip().lower()
-            if mode not in {"dom", "network"}:
-                return False
-
-        if "hard_timeout" in stream_config and not isinstance(stream_config["hard_timeout"], (int, float)):
-            return False
-
-        if "request_transport" in stream_config:
-            request_transport = stream_config["request_transport"]
-            if not isinstance(request_transport, dict):
-                return False
-            if "mode" in request_transport and not isinstance(request_transport["mode"], str):
-                return False
-            if "profile" in request_transport and not isinstance(request_transport["profile"], str):
-                return False
-            if "options" in request_transport and not isinstance(request_transport["options"], dict):
-                return False
-
-        if "network" in stream_config:
-            if not isinstance(stream_config["network"], dict):
-                return False
-
-            network_config = stream_config["network"]
-            string_fields = [
-                "listen_pattern",
-                "stream_match_pattern",
-                "parser",
-            ]
-            numeric_fields = [
-                "first_response_timeout",
-                "silence_threshold",
-                "response_interval",
-            ]
-
-            for key in string_fields:
-                if key in network_config and not isinstance(network_config[key], str):
-                    return False
-
-            for key in numeric_fields:
-                if key in network_config and not isinstance(network_config[key], (int, float)):
-                    return False
-
-            if "stream_match_mode" in network_config:
-                mode = str(network_config["stream_match_mode"]).strip().lower()
-                if mode not in {"keyword", "regex"}:
-                    return False
-
-        if "send_confirmation" in stream_config:
-            if not isinstance(stream_config["send_confirmation"], dict):
-                return False
-
-            send_confirmation = stream_config["send_confirmation"]
-            numeric_fields = [
-                "post_click_observe_window",
-                "pre_retry_probe_window",
-                "retry_observe_window",
-                "attachment_observe_window",
-                "retry_interval",
-                "retry_cooldown_window",
-            ]
-            int_fields = [
-                "max_retry_count",
-            ]
-            string_fields = [
-                "retry_key_combo",
-            ]
-            bool_fields = [
-                "retry_on_unconfirmed_send",
-                "accept_attachment_change",
-                "accept_attachment_disappear",
-                "accept_probe_confirmation",
-                "retry_block_on_stop_button",
-                "retry_block_if_generating",
-                "trust_network_activity",
-                "trust_generating_indicator",
-                "trust_send_disabled_with_input_shrink",
-            ]
-            enum_fields = {
-                "attachment_sensitivity": {"low", "medium", "high"},
-                "retry_action": {"click_send_btn", "key_press"},
-            }
-
-            for key in numeric_fields:
-                if key in send_confirmation and not isinstance(send_confirmation[key], (int, float)):
-                    return False
-
-            for key in int_fields:
-                if key in send_confirmation and not isinstance(send_confirmation[key], int):
-                    return False
-
-            for key in string_fields:
-                if key in send_confirmation and not isinstance(send_confirmation[key], str):
-                    return False
-
-            for key in bool_fields:
-                if key in send_confirmation and not isinstance(send_confirmation[key], bool):
-                    return False
-
-            for key, allowed_values in enum_fields.items():
-                if key not in send_confirmation:
-                    continue
-                value = str(send_confirmation[key]).strip().lower()
-                if value not in allowed_values:
-                    return False
-
-        if "attachment_monitor" in stream_config:
-            if not isinstance(stream_config["attachment_monitor"], dict):
-                return False
-
-            attachment_monitor = stream_config["attachment_monitor"]
-            numeric_fields = [
-                "idle_timeout",
-                "hard_max_wait",
-            ]
-            bool_fields = [
-                "require_attachment_present",
-                "require_upload_signal_before_ready",
-                "continue_once_on_unconfirmed_send",
-            ]
-            list_fields = [
-                "root_selectors",
-                "attachment_selectors",
-                "pending_selectors",
-                "status_selectors",
-                "content_exclusion_selectors",
-                "busy_text_markers",
-                "ignored_busy_text_markers",
-                "send_button_disabled_markers",
-            ]
-
-            for key in numeric_fields:
-                if key in attachment_monitor and not isinstance(attachment_monitor[key], (int, float)):
-                    return False
-
-            for key in bool_fields:
-                if key in attachment_monitor and not isinstance(attachment_monitor[key], bool):
-                    return False
-
-            for key in list_fields:
-                if key not in attachment_monitor:
-                    continue
-                value = attachment_monitor[key]
-                if not isinstance(value, list):
-                    return False
-                if any(not isinstance(item, str) for item in value):
-                    return False
-
-    if "file_paste" in config:
-        if not isinstance(config["file_paste"], dict):
-            return False
-
-        file_paste = config["file_paste"]
-        if "enabled" in file_paste and not isinstance(file_paste["enabled"], bool):
-            return False
-        if "threshold" in file_paste and not isinstance(file_paste["threshold"], int):
-            return False
-        if "temp_file_type" in file_paste:
-            temp_file_type = str(file_paste["temp_file_type"]).strip().lower()
-            if temp_file_type not in {"txt", "pdf", "chunk", "error"}:
-                return False
-        if "hint_text" in file_paste and not isinstance(file_paste["hint_text"], str):
-            return False
-        if "txt_hint_text" in file_paste and not isinstance(file_paste["txt_hint_text"], str):
-            return False
-        if "pdf_hint_text" in file_paste and not isinstance(file_paste["pdf_hint_text"], str):
-            return False
-        if "error_hint_text" in file_paste and not isinstance(file_paste["error_hint_text"], str):
-            return False
-        if "reacquire_input_after_upload" in file_paste and not isinstance(file_paste["reacquire_input_after_upload"], bool):
-            return False
-        if "post_upload_input_selector" in file_paste and not isinstance(file_paste["post_upload_input_selector"], str):
-            return False
-        if "post_upload_settle" in file_paste and not isinstance(file_paste["post_upload_settle"], (int, float)):
-            return False
-        if "upload_signal_timeout" in file_paste and not isinstance(file_paste["upload_signal_timeout"], (int, float)):
-            return False
-        if "upload_signal_grace" in file_paste and not isinstance(file_paste["upload_signal_grace"], (int, float)):
-            return False
-        if "state_probe" in file_paste:
-            state_probe = file_paste["state_probe"]
-            if not isinstance(state_probe, dict):
-                return False
-            if "enabled" in state_probe and not isinstance(state_probe["enabled"], bool):
-                return False
-            if "code" in state_probe and not isinstance(state_probe["code"], str):
-                return False
-
-        if "send_confirmation" in file_paste:
-            send_confirmation = file_paste["send_confirmation"]
-            if not isinstance(send_confirmation, dict):
-                return False
-
-            numeric_fields = [
-                "post_click_observe_window",
-                "pre_retry_probe_window",
-                "retry_observe_window",
-                "attachment_observe_window",
-                "retry_interval",
-                "retry_cooldown_window",
-            ]
-            int_fields = [
-                "max_retry_count",
-            ]
-            string_fields = [
-                "retry_key_combo",
-            ]
-            bool_fields = [
-                "retry_on_unconfirmed_send",
-                "accept_attachment_change",
-                "accept_attachment_disappear",
-                "accept_probe_confirmation",
-                "retry_block_on_stop_button",
-                "retry_block_if_generating",
-                "trust_network_activity",
-                "trust_generating_indicator",
-                "trust_send_disabled_with_input_shrink",
-            ]
-            enum_fields = {
-                "attachment_sensitivity": {"low", "medium", "high"},
-                "retry_action": {"click_send_btn", "key_press"},
-            }
-
-            for key in numeric_fields:
-                if key in send_confirmation and not isinstance(send_confirmation[key], (int, float)):
-                    return False
-
-            for key in int_fields:
-                if key in send_confirmation and not isinstance(send_confirmation[key], int):
-                    return False
-
-            for key in string_fields:
-                if key in send_confirmation and not isinstance(send_confirmation[key], str):
-                    return False
-
-            for key in bool_fields:
-                if key in send_confirmation and not isinstance(send_confirmation[key], bool):
-                    return False
-
-            for key, allowed_values in enum_fields.items():
-                if key not in send_confirmation:
-                    continue
-                value = str(send_confirmation[key]).strip().lower()
-                if value not in allowed_values:
-                    return False
-
-        if "attachment_monitor" in file_paste:
-            attachment_monitor = file_paste["attachment_monitor"]
-            if not isinstance(attachment_monitor, dict):
-                return False
-
-            numeric_fields = [
-                "idle_timeout",
-                "hard_max_wait",
-            ]
-            bool_fields = [
-                "require_attachment_present",
-                "require_upload_signal_before_ready",
-                "continue_once_on_unconfirmed_send",
-            ]
-            list_fields = [
-                "root_selectors",
-                "attachment_selectors",
-                "pending_selectors",
-                "status_selectors",
-                "content_exclusion_selectors",
-                "busy_text_markers",
-                "ignored_busy_text_markers",
-                "send_button_disabled_markers",
-            ]
-
-            for key in numeric_fields:
-                if key in attachment_monitor and not isinstance(attachment_monitor[key], (int, float)):
-                    return False
-
-            for key in bool_fields:
-                if key in attachment_monitor and not isinstance(attachment_monitor[key], bool):
-                    return False
-
-            for key in list_fields:
-                if key not in attachment_monitor:
-                    continue
-                value = attachment_monitor[key]
-                if not isinstance(value, list):
-                    return False
-                if any(not isinstance(item, str) for item in value):
-                    return False
-
-    if "prompt_padding" in config:
-        if not isinstance(config["prompt_padding"], dict):
-            return False
-
-        prompt_padding = config["prompt_padding"]
-        if "enabled" in prompt_padding and not isinstance(prompt_padding["enabled"], bool):
-            return False
-        if "marker_text" in prompt_padding and not isinstance(prompt_padding["marker_text"], str):
-            return False
-        if "segments_per_side" in prompt_padding and not isinstance(prompt_padding["segments_per_side"], int):
-            return False
-        if "random_insert_enabled" in prompt_padding and not isinstance(prompt_padding["random_insert_enabled"], bool):
-            return False
-        if "random_insert_chars" in prompt_padding and not isinstance(prompt_padding["random_insert_chars"], str):
+    # 各配置段彼此独立，分别校验；任一段不合法即整体不通过
+    for key, validator in _SITE_CONFIG_VALIDATORS:
+        if key in config and not validator(config):
             return False
 
     return True
