@@ -8,7 +8,8 @@ schemas.py - 数据模型和 API Schema 定义
 """
 
 import copy
-from typing import Any, Dict, List, Literal, Optional, TypedDict, Union
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Literal, Optional, Tuple, TypedDict, Union
 
 try:  # Python 3.11+
     from typing import NotRequired
@@ -979,11 +980,131 @@ def get_default_image_extraction_config() -> ImageExtractionConfig:
         "audio_capture_activity_threshold": 0.006,
         "audio_capture_activity_silence_seconds": 0.65,
     }
+@dataclass(frozen=True)
+class _StreamFieldSpec:
+    """stream_config 某个子段里各字段的类型约束。
+
+    所有约束都是"键出现才校验"，因此子段里多出未列出的键是允许的。
+    """
+
+    numeric_fields: Tuple[str, ...] = ()          # int 或 float
+    int_fields: Tuple[str, ...] = ()              # 必须是 int（不接受 float / bool 之外的数字）
+    string_fields: Tuple[str, ...] = ()
+    bool_fields: Tuple[str, ...] = ()             # 必须是真正的 bool，1/0/"true" 都不算
+    dict_fields: Tuple[str, ...] = ()
+    list_of_str_fields: Tuple[str, ...] = ()      # 必须是 list 且元素全为 str
+    enum_fields: Dict[str, frozenset] = field(default_factory=dict)  # 归一化为小写后须在集合内
+
+
+def _validate_stream_fields(section: Dict[str, Any], spec: _StreamFieldSpec) -> bool:
+    """按 spec 逐项校验一个已确认是 dict 的子段。
+
+    纯布尔判定、无副作用，所以各字段组的检查顺序不影响结果——这也是六段能
+    共用同一份引擎的前提。
+    """
+    for key in spec.numeric_fields:
+        if key in section and not isinstance(section[key], (int, float)):
+            return False
+
+    for key in spec.int_fields:
+        if key in section and not isinstance(section[key], int):
+            return False
+
+    for key in spec.string_fields:
+        if key in section and not isinstance(section[key], str):
+            return False
+
+    for key in spec.bool_fields:
+        if key in section and not isinstance(section[key], bool):
+            return False
+
+    for key in spec.dict_fields:
+        if key in section and not isinstance(section[key], dict):
+            return False
+
+    for key, allowed_values in spec.enum_fields.items():
+        if key not in section:
+            continue
+        if str(section[key]).strip().lower() not in allowed_values:
+            return False
+
+    for key in spec.list_of_str_fields:
+        if key not in section:
+            continue
+        value = section[key]
+        if not isinstance(value, list):
+            return False
+        if any(not isinstance(item, str) for item in value):
+            return False
+
+    return True
+
+
+_STREAM_MODE_ALLOWED = frozenset({"dom", "network"})
+
+# 各子段的字段约束声明。键的顺序即校验顺序（纯布尔判定，顺序只影响短路时机）。
+_STREAM_CONFIG_SECTION_SPECS: Dict[str, _StreamFieldSpec] = {
+    "request_transport": _StreamFieldSpec(
+        string_fields=("mode", "profile"),
+        dict_fields=("options",),
+    ),
+    "network": _StreamFieldSpec(
+        string_fields=("listen_pattern", "stream_match_pattern", "parser"),
+        numeric_fields=("first_response_timeout", "silence_threshold", "response_interval"),
+        enum_fields={"stream_match_mode": frozenset({"keyword", "regex"})},
+    ),
+    "send_confirmation": _StreamFieldSpec(
+        numeric_fields=(
+            "post_click_observe_window",
+            "pre_retry_probe_window",
+            "retry_observe_window",
+            "attachment_observe_window",
+            "retry_interval",
+            "retry_cooldown_window",
+        ),
+        int_fields=("max_retry_count",),
+        string_fields=("retry_key_combo",),
+        bool_fields=(
+            "retry_on_unconfirmed_send",
+            "accept_attachment_change",
+            "accept_attachment_disappear",
+            "accept_probe_confirmation",
+            "retry_block_on_stop_button",
+            "retry_block_if_generating",
+            "trust_network_activity",
+            "trust_generating_indicator",
+            "trust_send_disabled_with_input_shrink",
+        ),
+        enum_fields={
+            "attachment_sensitivity": frozenset({"low", "medium", "high"}),
+            "retry_action": frozenset({"click_send_btn", "key_press"}),
+        },
+    ),
+    "attachment_monitor": _StreamFieldSpec(
+        numeric_fields=("idle_timeout", "hard_max_wait"),
+        bool_fields=(
+            "require_attachment_present",
+            "require_upload_signal_before_ready",
+            "continue_once_on_unconfirmed_send",
+        ),
+        list_of_str_fields=(
+            "root_selectors",
+            "attachment_selectors",
+            "pending_selectors",
+            "status_selectors",
+            "content_exclusion_selectors",
+            "busy_text_markers",
+            "ignored_busy_text_markers",
+            "send_button_disabled_markers",
+        ),
+    ),
+}
+
+
 def _validate_stream_config(config: Dict[str, Any]) -> bool:
     """校验站点配置的 stream_config 段。
 
-    从 validate_site_config 中原样提出，方法体与提取前逐字节相同
-    （仅缩进变化）。只读取 config["stream_config"]，因此三段可以独立测试。
+    只读取 config["stream_config"]，因此各段可以独立测试。
 
     前置条件：config 必须包含 "stream_config" 键。"键是否存在"的检查留在
     validate_site_config 的分派处（见 _SITE_CONFIG_VALIDATORS），此处不
@@ -995,152 +1116,21 @@ def _validate_stream_config(config: Dict[str, Any]) -> bool:
     stream_config = config["stream_config"]
 
     if "mode" in stream_config:
-        mode = str(stream_config["mode"]).strip().lower()
-        if mode not in {"dom", "network"}:
+        if str(stream_config["mode"]).strip().lower() not in _STREAM_MODE_ALLOWED:
             return False
 
     if "hard_timeout" in stream_config and not isinstance(stream_config["hard_timeout"], (int, float)):
         return False
 
-    if "request_transport" in stream_config:
-        request_transport = stream_config["request_transport"]
-        if not isinstance(request_transport, dict):
+    for key, spec in _STREAM_CONFIG_SECTION_SPECS.items():
+        if key not in stream_config:
+            continue
+        section = stream_config[key]
+        if not isinstance(section, dict):
             return False
-        if "mode" in request_transport and not isinstance(request_transport["mode"], str):
-            return False
-        if "profile" in request_transport and not isinstance(request_transport["profile"], str):
-            return False
-        if "options" in request_transport and not isinstance(request_transport["options"], dict):
+        if not _validate_stream_fields(section, spec):
             return False
 
-    if "network" in stream_config:
-        if not isinstance(stream_config["network"], dict):
-            return False
-
-        network_config = stream_config["network"]
-        string_fields = [
-            "listen_pattern",
-            "stream_match_pattern",
-            "parser",
-        ]
-        numeric_fields = [
-            "first_response_timeout",
-            "silence_threshold",
-            "response_interval",
-        ]
-
-        for key in string_fields:
-            if key in network_config and not isinstance(network_config[key], str):
-                return False
-
-        for key in numeric_fields:
-            if key in network_config and not isinstance(network_config[key], (int, float)):
-                return False
-
-        if "stream_match_mode" in network_config:
-            mode = str(network_config["stream_match_mode"]).strip().lower()
-            if mode not in {"keyword", "regex"}:
-                return False
-
-    if "send_confirmation" in stream_config:
-        if not isinstance(stream_config["send_confirmation"], dict):
-            return False
-
-        send_confirmation = stream_config["send_confirmation"]
-        numeric_fields = [
-            "post_click_observe_window",
-            "pre_retry_probe_window",
-            "retry_observe_window",
-            "attachment_observe_window",
-            "retry_interval",
-            "retry_cooldown_window",
-        ]
-        int_fields = [
-            "max_retry_count",
-        ]
-        string_fields = [
-            "retry_key_combo",
-        ]
-        bool_fields = [
-            "retry_on_unconfirmed_send",
-            "accept_attachment_change",
-            "accept_attachment_disappear",
-            "accept_probe_confirmation",
-            "retry_block_on_stop_button",
-            "retry_block_if_generating",
-            "trust_network_activity",
-            "trust_generating_indicator",
-            "trust_send_disabled_with_input_shrink",
-        ]
-        enum_fields = {
-            "attachment_sensitivity": {"low", "medium", "high"},
-            "retry_action": {"click_send_btn", "key_press"},
-        }
-
-        for key in numeric_fields:
-            if key in send_confirmation and not isinstance(send_confirmation[key], (int, float)):
-                return False
-
-        for key in int_fields:
-            if key in send_confirmation and not isinstance(send_confirmation[key], int):
-                return False
-
-        for key in string_fields:
-            if key in send_confirmation and not isinstance(send_confirmation[key], str):
-                return False
-
-        for key in bool_fields:
-            if key in send_confirmation and not isinstance(send_confirmation[key], bool):
-                return False
-
-        for key, allowed_values in enum_fields.items():
-            if key not in send_confirmation:
-                continue
-            value = str(send_confirmation[key]).strip().lower()
-            if value not in allowed_values:
-                return False
-
-    if "attachment_monitor" in stream_config:
-        if not isinstance(stream_config["attachment_monitor"], dict):
-            return False
-
-        attachment_monitor = stream_config["attachment_monitor"]
-        numeric_fields = [
-            "idle_timeout",
-            "hard_max_wait",
-        ]
-        bool_fields = [
-            "require_attachment_present",
-            "require_upload_signal_before_ready",
-            "continue_once_on_unconfirmed_send",
-        ]
-        list_fields = [
-            "root_selectors",
-            "attachment_selectors",
-            "pending_selectors",
-            "status_selectors",
-            "content_exclusion_selectors",
-            "busy_text_markers",
-            "ignored_busy_text_markers",
-            "send_button_disabled_markers",
-        ]
-
-        for key in numeric_fields:
-            if key in attachment_monitor and not isinstance(attachment_monitor[key], (int, float)):
-                return False
-
-        for key in bool_fields:
-            if key in attachment_monitor and not isinstance(attachment_monitor[key], bool):
-                return False
-
-        for key in list_fields:
-            if key not in attachment_monitor:
-                continue
-            value = attachment_monitor[key]
-            if not isinstance(value, list):
-                return False
-            if any(not isinstance(item, str) for item in value):
-                return False
     return True
 
 def _validate_file_paste(config: Dict[str, Any]) -> bool:
