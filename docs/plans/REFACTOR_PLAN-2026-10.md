@@ -108,6 +108,7 @@ AST 构图 + Tarjan 求 SCC；模块数/环数只减不增。
 | 6d | `1a2085b` | ✅ | 合并两处重复的 Battle 页面判定：**CC 291 → 289** |
 | 7a | `26c7456` | ✅ | 提取 `_execute_action` 的 11 个内联分支：**CC 123 → 24** |
 | 7b | `5230d28` | ✅ | 22 分支 if/elif 链 → `_ACTION_HANDLERS` 查表：**CC 24 → 4**（420 → 14 行） |
+| 10 | `6098f65` | ✅ | `WorkflowExecutor.execute_step` 11 分支链 → `_STEP_HANDLERS` 查表：**CC 115 → 32** |
 | 8 | `2548ac0` | ✅ | `_cuteify_debug_message` 619 行/CC 127 → 10 段各 CC 13 |
 | 9 | `7975510` | ✅ | 修复补丁静默失败 + 写回复核 + 版本上界（10 项新测试） |
 
@@ -118,7 +119,7 @@ AST 构图 + Tarjan 求 SCC；模块数/环数只减不增。
 | **环中模块** | 93 (38%) | **78 (32%)** | **−15** ✅ |
 | **导入环个数** | 4 | **3** | −1 ✅ |
 | 最大纠缠分量 | 63 | 61 | −2 ✅ |
-| **测试** | 1331 passed | **1456 passed** | **+125** ✅ |
+| **测试** | 1331 passed | **1488 passed** | **+157** ✅ |
 | **ruff 启用规则** | 5 条 | **14 条** | ✅ |
 | **棘轮数量** | 2 条 | **5 条**（异常 / 驱动 / 导入环 / 分层 / 类型） | ✅ |
 | **类型检查** | 0 模块 | **协议层 7 文件、基线 51 条** | ✅ |
@@ -130,6 +131,7 @@ AST 构图 + Tarjan 求 SCC；模块数/环数只减不增。
 | **`_execute_action` CC** | **123** | **4** | **−119** ✅ |
 | 该函数行数 | 420 | 14 | −406 ✅ |
 | **最大函数 CC** | **357** | **289** | **−68** ✅ |
+| **`execute_step` CC** | **115** | **32** | **−83** ✅ |
 | **`config.py` 导出面** | 132 个（106 私有） | **20 个** | **−112** ✅ |
 | 覆盖率 | 41.8% | **42%** | ±0（见下） |
 
@@ -158,13 +160,16 @@ DrissionPage 源码，一旦注入点因升级而消失，表现只是"网络监
 | --- | --- | --- |
 | `_execute_workflow_stream_once` | CC 357 / 1348 行 | **CC 289 / 1015 行** |
 | `_execute_action` | CC 123 / 420 行 | **CC 4 / 14 行** |
+| `WorkflowExecutor.execute_step` | CC 115 / 474 行 | **CC 32 / ~100 行** |
+
+三处巨型派发/编排函数全部降级，累计减少 CC 254。
 
 ### 剩余工作
 
 | 步骤 | 内容 | 难度 |
 | --- | --- | --- |
 | 6e | 继续拆分 `_execute_workflow_stream_once`（现 1015 行 / CC 289）：逐步预处理段（~120 行，含 continue/break/yield）与动作派发 Try（195 行）。**需先把循环状态收敛成显式状态对象**，故本轮暂停在此 | 高 |
-| 10 | 按新的 CC 榜单继续降级：`_stream_output_phase`（206）、`_extract_media_after_stream`（201）、`_stream_output_phase`（153）、`_validate_image_config`（143）、`validate_site_config`（135）、`execute_step`（115） | 中～高 |
+| 11 | 按新的 CC 榜单继续降级：`_stream_output_phase`（206）、`_extract_media_after_stream`（201）、`_stream_output_phase`（153）、`_validate_image_config`（143）、`validate_site_config`（135）、`_step_stream`（52） | 中～高 |
 
 ### 步骤 7 的注册表模式（可复用于其它派发链）
 
@@ -186,6 +191,20 @@ DrissionPage 源码，一旦注入点因升级而消失，表现只是"网络监
 可能是 dict/list。原 `if/elif` 链用 `==` 比较只会失配后落到 else，无条件
 查表则会抛 TypeError——把一个配置错误升级成崩溃。实现加了 `isinstance`
 判断，并配了参数化测试。
+
+### 同一配方在 execute_step 上踩到的坑（值得记住）
+
+步骤 10 把这套配方用在 `execute_step` 上时，第一版直接照抄 `_execute_action`
+的 `yield from handler(...)` 写法，**当场跑挂了两个集成测试**：
+`TypeError: 'NoneType' object is not iterable`。
+
+原因：两处注册表看着像，语义并不同。`_execute_action` 的所有处理器都返回
+值；而 `execute_step` 的 11 个处理器里**只有流式步骤是生成器**，其余 10 个
+只是执行副作用后返回 None。对 None 做 `yield from` 必然抛错。
+
+结论：**复用配方不等于复用实现**。每次套用都要重新确认处理器的返回契约，
+并且——这一条更有价值——正是已有的集成测试在几秒内把它抓住了。这也是铁律
+第 2 条（每步必须全绿才能提交）实际发挥作用的一次。
 
 ### 步骤 6 的拆分方法（可复用于其它巨型函数）
 
