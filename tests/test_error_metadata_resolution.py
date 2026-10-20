@@ -22,10 +22,10 @@ from typing import Any, Dict, Optional
 import pytest
 
 from app.services.error_metadata import (
-    ErrorMetadata,
     _CANCEL_REASONS,
     _KNOWN_NON_RETRYABLE_CODES,
     _PROMPT_REJECTION_CODES,
+    ErrorMetadata,
     resolve_error_metadata,
 )
 
