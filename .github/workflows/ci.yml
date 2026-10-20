@@ -71,6 +71,15 @@ jobs:
       - name: 汇总失败用例
         if: failure()
         run: uv run --no-sync python scripts/ci_report_failures.py "$RUNNER_TEMP/pytest-report.xml" "$RUNNER_TEMP/pytest.log"
+      # 临时：把原始日志作为制品带出，用于排查 Windows 平台的失败（日志下载的
+      # 域名在部分网络环境下不可达）。定位后会移除。
+      - name: 上传 pytest 日志
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-log-${{ matrix.os }}
+          path: ${{ runner.temp }}/pytest.log
+          if-no-files-found: warn
 
   structure:
     name: 结构与产物一致性
