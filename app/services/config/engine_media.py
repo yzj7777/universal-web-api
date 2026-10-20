@@ -22,6 +22,415 @@ from app.models.schemas import (
 from .engine_common import DEFAULT_PRESET_NAME, _coerce_bool, _merge_config_patch, logger
 
 
+def _normalize_image_modalities(config: Dict, result: Dict, default: Dict) -> None:
+    """规范化 image_extraction 配置：模态开关与 legacy `enabled` 的兼容处理。
+
+    从 _validate_image_config 中原样提出，方法体与提取前逐字节相同
+    （仅缩进变化）。只依赖 (config, result, default)，与其它组无耦合，
+    因此可以独立测试。
+    """
+    raw_modalities = config.get("modalities")
+    if isinstance(raw_modalities, dict):
+        result["modalities"] = normalize_modalities_config(raw_modalities)
+
+    legacy_enabled = None
+    if "enabled" in config:
+        legacy_enabled = _coerce_bool(config.get("enabled"), False)
+        result["enabled"] = legacy_enabled
+
+    if (
+        legacy_enabled is not None
+        and not isinstance(raw_modalities, dict)
+    ):
+        result["modalities"]["image"] = normalize_modality_policy("image", legacy_enabled)
+    elif legacy_enabled is not None and isinstance(raw_modalities, dict):
+        if not legacy_enabled:
+            for key in ("image", "audio", "video"):
+                result["modalities"][key] = normalize_modality_policy(key, False)
+        elif not get_enabled_modalities(result.get("modalities")):
+            result["modalities"]["image"] = normalize_modality_policy("image", True)
+
+def _normalize_image_extraction(config: Dict, result: Dict, default: Dict) -> None:
+    """规范化 image_extraction 配置：选择器、后处理策略、超时与尺寸等提取参数。
+
+    从 _validate_image_config 中原样提出，方法体与提取前逐字节相同
+    （仅缩进变化）。只依赖 (config, result, default)，与其它组无耦合，
+    因此可以独立测试。
+    """
+    if "selector" in config and config["selector"]:
+        result["selector"] = str(config["selector"]).strip()
+        if not result["selector"]:
+            result["selector"] = "img"
+
+    if "audio_selector" in config and config["audio_selector"]:
+        result["audio_selector"] = str(config["audio_selector"]).strip()
+        if not result["audio_selector"]:
+            result["audio_selector"] = default["audio_selector"]
+
+    if "video_selector" in config and config["video_selector"]:
+        result["video_selector"] = str(config["video_selector"]).strip()
+        if not result["video_selector"]:
+            result["video_selector"] = default["video_selector"]
+
+    if "container_selector" in config:
+        val = config["container_selector"]
+        result["container_selector"] = str(val).strip() if val else None
+
+    if "final_target_strategy" in config:
+        val = str(config["final_target_strategy"] or "").strip().lower()
+        if val in ("container", "latest_reply", "latest_visual_reply"):
+            result["final_target_strategy"] = val
+
+    if "latest_visual_column" in config:
+        val = str(config["latest_visual_column"] or "").strip().lower()
+        if val in ("left", "right"):
+            result["latest_visual_column"] = val
+
+    if "allow_container_fallback" in config:
+        result["allow_container_fallback"] = _coerce_bool(config.get("allow_container_fallback"), False)
+
+    if "force_postprocess" in config:
+        result["force_postprocess"] = _coerce_bool(config.get("force_postprocess"), False)
+
+    if "arena_image_generation" in config:
+        result["arena_image_generation"] = _coerce_bool(
+            config.get("arena_image_generation"), False
+        )
+
+    if "direct_postprocess_modalities" in config:
+        raw_direct_modalities = config.get("direct_postprocess_modalities")
+        if isinstance(raw_direct_modalities, (list, tuple, set)):
+            allowed_direct_modalities = []
+            for item in raw_direct_modalities:
+                media_type = str(item or "").strip().lower()
+                if (
+                    media_type in {"image", "audio", "video"}
+                    and is_modality_enabled(result.get("modalities"), media_type)
+                    and media_type not in allowed_direct_modalities
+                ):
+                    allowed_direct_modalities.append(media_type)
+            if allowed_direct_modalities:
+                result["direct_postprocess_modalities"] = allowed_direct_modalities
+
+    if "debounce_seconds" in config:
+        try:
+            val = float(config["debounce_seconds"])
+            result["debounce_seconds"] = max(0, min(val, 30))
+        except (ValueError, TypeError):
+            pass
+
+    if "wait_for_load" in config:
+        result["wait_for_load"] = _coerce_bool(config.get("wait_for_load"), True)
+
+    if "load_timeout_seconds" in config:
+        try:
+            val = float(config["load_timeout_seconds"])
+            result["load_timeout_seconds"] = max(1, min(val, 60))
+        except (ValueError, TypeError):
+            pass
+
+    if "download_blobs" in config:
+        result["download_blobs"] = _coerce_bool(config.get("download_blobs"), False)
+
+    if "max_size_mb" in config:
+        try:
+            val = int(config["max_size_mb"])
+            result["max_size_mb"] = max(1, min(val, 100))
+        except (ValueError, TypeError):
+            pass
+
+    if "canvas_export_mime" in config:
+        val = str(config["canvas_export_mime"] or "").strip().lower()
+        if val in {"image/jpeg", "image/webp", "image/png"}:
+            result["canvas_export_mime"] = val
+
+    if "canvas_export_quality" in config:
+        try:
+            val = float(config["canvas_export_quality"])
+            result["canvas_export_quality"] = max(0.1, min(val, 1.0))
+        except (ValueError, TypeError):
+            pass
+
+    if "src_allow_patterns" in config:
+        raw_patterns = config.get("src_allow_patterns")
+        if isinstance(raw_patterns, str):
+            raw_patterns = raw_patterns.replace("\r\n", "\n").replace(";", "\n").split("\n")
+        if isinstance(raw_patterns, (list, tuple, set)):
+            patterns = []
+            seen = set()
+            for item in raw_patterns:
+                text = str(item or "").strip()
+                if not text or text in seen:
+                    continue
+                seen.add(text)
+                patterns.append(text)
+            result["src_allow_patterns"] = patterns
+
+    if "mode" in config:
+        val = str(config["mode"]).lower()
+        if val in ("all", "first", "last"):
+            result["mode"] = val
+
+def _normalize_image_audio_capture(config: Dict, result: Dict, default: Dict) -> None:
+    """规范化 image_extraction 配置：音频采集相关参数。
+
+    从 _validate_image_config 中原样提出，方法体与提取前逐字节相同
+    （仅缩进变化）。只依赖 (config, result, default)，与其它组无耦合，
+    因此可以独立测试。
+    """
+    if "audio_capture_enabled" in config:
+        result["audio_capture_enabled"] = _coerce_bool(config.get("audio_capture_enabled"), False)
+
+    if "audio_capture_mute_playback" in config:
+        result["audio_capture_mute_playback"] = _coerce_bool(config.get("audio_capture_mute_playback"), False)
+
+    if "audio_capture_preload_enabled" in config:
+        result["audio_capture_preload_enabled"] = _coerce_bool(config.get("audio_capture_preload_enabled"), False)
+
+    if "audio_capture_reload_before_workflow" in config:
+        result["audio_capture_reload_before_workflow"] = _coerce_bool(config.get("audio_capture_reload_before_workflow"), False)
+
+    if "audio_capture_preserve_graph" in config:
+        result["audio_capture_preserve_graph"] = _coerce_bool(config.get("audio_capture_preserve_graph"), False)
+
+    if "audio_capture_terminal_settle_seconds" in config:
+        try:
+            val = float(config["audio_capture_terminal_settle_seconds"])
+            result["audio_capture_terminal_settle_seconds"] = max(0.0, min(val, 5.0))
+        except (ValueError, TypeError):
+            pass
+
+    if "audio_trigger_selector" in config:
+        result["audio_trigger_selector"] = str(config["audio_trigger_selector"] or "").strip()
+
+    if "audio_trigger_labels" in config:
+        raw_labels = config.get("audio_trigger_labels")
+        if isinstance(raw_labels, (list, tuple)):
+            labels = [
+                str(item).strip()
+                for item in raw_labels
+                if str(item).strip()
+            ]
+            if labels:
+                result["audio_trigger_labels"] = labels
+
+    if "audio_capture_max_wait_seconds" in config:
+        try:
+            val = float(config["audio_capture_max_wait_seconds"])
+            result["audio_capture_max_wait_seconds"] = max(1.0, min(val, 120.0))
+        except (ValueError, TypeError):
+            pass
+
+    if "audio_capture_min_wait_seconds" in config:
+        try:
+            val = float(config["audio_capture_min_wait_seconds"])
+            result["audio_capture_min_wait_seconds"] = max(0.2, min(val, 30.0))
+        except (ValueError, TypeError):
+            pass
+
+    if "audio_capture_hard_max_wait_seconds" in config:
+        try:
+            val = float(config["audio_capture_hard_max_wait_seconds"])
+            result["audio_capture_hard_max_wait_seconds"] = max(1.0, min(val, 180.0))
+        except (ValueError, TypeError):
+            pass
+
+    if "audio_capture_estimated_chars_per_second" in config:
+        try:
+            val = float(config["audio_capture_estimated_chars_per_second"])
+            result["audio_capture_estimated_chars_per_second"] = max(1.0, min(val, 20.0))
+        except (ValueError, TypeError):
+            pass
+
+    if "audio_capture_wait_padding_seconds" in config:
+        try:
+            val = float(config["audio_capture_wait_padding_seconds"])
+            result["audio_capture_wait_padding_seconds"] = max(0.0, min(val, 10.0))
+        except (ValueError, TypeError):
+            pass
+
+def _normalize_image_network_capture(config: Dict, result: Dict, default: Dict) -> None:
+    """规范化 image_extraction 配置：音频网络采集（含 URL 模式白名单）。
+
+    从 _validate_image_config 中原样提出，方法体与提取前逐字节相同
+    （仅缩进变化）。只依赖 (config, result, default)，与其它组无耦合，
+    因此可以独立测试。
+    """
+    network_capture = dict(result.get("audio_network_capture") or {})
+    raw_network_capture = config.get("audio_network_capture")
+    if isinstance(raw_network_capture, dict):
+        if "enabled" in raw_network_capture:
+            network_capture["enabled"] = _coerce_bool(raw_network_capture.get("enabled"), False)
+        if "timeout_seconds" in raw_network_capture:
+            try:
+                val = float(raw_network_capture["timeout_seconds"])
+                network_capture["timeout_seconds"] = max(0.1, min(val, 15.0))
+            except (ValueError, TypeError):
+                pass
+        if "transport" in raw_network_capture:
+            val = str(raw_network_capture["transport"] or "").strip()
+            if val in {"page_websocket_probe"}:
+                network_capture["transport"] = val
+        if "extractor" in raw_network_capture:
+            val = str(raw_network_capture["extractor"] or "").strip()
+            if val in {"voicegenie_ogg_pages", "voicegenie_binary_stream"}:
+                network_capture["extractor"] = val
+        if "settle_seconds" in raw_network_capture:
+            try:
+                val = float(raw_network_capture["settle_seconds"])
+                network_capture["settle_seconds"] = max(0.05, min(val, 5.0))
+            except (ValueError, TypeError):
+                pass
+        if "url_patterns" in raw_network_capture:
+            raw_patterns = raw_network_capture.get("url_patterns")
+            if isinstance(raw_patterns, (list, tuple)):
+                patterns = [
+                    str(item).strip()
+                    for item in raw_patterns
+                    if str(item).strip()
+                ]
+                if patterns:
+                    network_capture["url_patterns"] = patterns
+        if "max_payload_bytes" in raw_network_capture:
+            # 修复：此前漏处理该键，导致前端设置的单条载荷上限被静默重置为默认 10MB
+            try:
+                val = int(raw_network_capture["max_payload_bytes"])
+                network_capture["max_payload_bytes"] = max(65536, min(val, 104857600))
+            except (ValueError, TypeError):
+                pass
+
+    # 兼容旧平铺字段，最终统一收口到新对象
+    if "audio_network_capture_enabled" in config:
+        network_capture["enabled"] = _coerce_bool(config.get("audio_network_capture_enabled"), False)
+
+    if "audio_network_capture_timeout_seconds" in config:
+        try:
+            val = float(config["audio_network_capture_timeout_seconds"])
+            network_capture["timeout_seconds"] = max(0.1, min(val, 15.0))
+        except (ValueError, TypeError):
+            pass
+
+    if "audio_network_url_patterns" in config:
+        raw_patterns = config.get("audio_network_url_patterns")
+        if isinstance(raw_patterns, (list, tuple)):
+            patterns = [
+                str(item).strip()
+                for item in raw_patterns
+                if str(item).strip()
+            ]
+            if patterns:
+                network_capture["url_patterns"] = patterns
+
+    result["audio_network_capture"] = network_capture
+
+def _normalize_image_browser_tts_fallback(config: Dict, result: Dict, default: Dict) -> None:
+    """规范化 image_extraction 配置：浏览器 TTS 兜底配置。
+
+    从 _validate_image_config 中原样提出，方法体与提取前逐字节相同
+    （仅缩进变化）。只依赖 (config, result, default)，与其它组无耦合，
+    因此可以独立测试。
+    """
+    browser_tts_fallback = dict(result.get("audio_browser_tts_fallback") or {})
+    raw_browser_tts_fallback = config.get("audio_browser_tts_fallback")
+    if isinstance(raw_browser_tts_fallback, dict):
+        if "enabled" in raw_browser_tts_fallback:
+            browser_tts_fallback["enabled"] = _coerce_bool(raw_browser_tts_fallback.get("enabled"), False)
+        if "provider" in raw_browser_tts_fallback:
+            val = str(raw_browser_tts_fallback["provider"] or "").strip()
+            if val in {"doubao_samantha"}:
+                browser_tts_fallback["provider"] = val
+        if "speaker" in raw_browser_tts_fallback:
+            val = str(raw_browser_tts_fallback["speaker"] or "").strip()
+            if val:
+                browser_tts_fallback["speaker"] = val
+        if "speech_rate" in raw_browser_tts_fallback:
+            try:
+                val = int(raw_browser_tts_fallback["speech_rate"])
+                browser_tts_fallback["speech_rate"] = max(-100, min(val, 100))
+            except (ValueError, TypeError):
+                pass
+        if "pitch" in raw_browser_tts_fallback:
+            try:
+                val = int(raw_browser_tts_fallback["pitch"])
+                browser_tts_fallback["pitch"] = max(-100, min(val, 100))
+            except (ValueError, TypeError):
+                pass
+        if "format" in raw_browser_tts_fallback:
+            val = str(raw_browser_tts_fallback["format"] or "").strip().lower()
+            if val in {"aac"}:
+                browser_tts_fallback["format"] = val
+        if "timeout_seconds" in raw_browser_tts_fallback:
+            try:
+                val = float(raw_browser_tts_fallback["timeout_seconds"])
+                browser_tts_fallback["timeout_seconds"] = max(3.0, min(val, 120.0))
+            except (ValueError, TypeError):
+                pass
+        for key in (
+            "pc_version",
+            "aid",
+            "real_aid",
+            "language",
+            "device_platform",
+            "pkg_type",
+            "region",
+            "sys_region",
+            "use_olympus_account",
+            "samantha_web",
+        ):
+            if key in raw_browser_tts_fallback:
+                val = str(raw_browser_tts_fallback[key] or "").strip()
+                if val:
+                    browser_tts_fallback[key] = val
+
+    result["audio_browser_tts_fallback"] = browser_tts_fallback
+
+def _normalize_image_audio_activity(config: Dict, result: Dict, default: Dict) -> None:
+    """规范化 image_extraction 配置：音频活动检测参数，并按启用的模态收敛 result["enabled"]。
+
+    从 _validate_image_config 中原样提出，方法体与提取前逐字节相同
+    （仅缩进变化）。只依赖 (config, result, default)，与其它组无耦合，
+    因此可以独立测试。
+    """
+    if "audio_capture_poll_seconds" in config:
+        try:
+            val = float(config["audio_capture_poll_seconds"])
+            result["audio_capture_poll_seconds"] = max(0.05, min(val, 5.0))
+        except (ValueError, TypeError):
+            pass
+
+    if "audio_capture_silence_seconds" in config:
+        try:
+            val = float(config["audio_capture_silence_seconds"])
+            result["audio_capture_silence_seconds"] = max(0.2, min(val, 30.0))
+        except (ValueError, TypeError):
+            pass
+
+    if "audio_capture_activity_threshold" in config:
+        try:
+            val = float(config["audio_capture_activity_threshold"])
+            result["audio_capture_activity_threshold"] = max(0.0001, min(val, 0.2))
+        except (ValueError, TypeError):
+            pass
+
+    if "audio_capture_activity_silence_seconds" in config:
+        try:
+            val = float(config["audio_capture_activity_silence_seconds"])
+            result["audio_capture_activity_silence_seconds"] = max(0.2, min(val, 10.0))
+        except (ValueError, TypeError):
+            pass
+
+    result["enabled"] = bool(get_enabled_modalities(result.get("modalities")))
+
+_IMAGE_CONFIG_NORMALIZERS = (
+    _normalize_image_modalities,
+    _normalize_image_extraction,
+    _normalize_image_audio_capture,
+    _normalize_image_network_capture,
+    _normalize_image_browser_tts_fallback,
+    _normalize_image_audio_activity,
+)
+
+
 class ConfigMediaMixin:
     """图片提取、文件粘贴、提示词填充配置与图片预设"""
 
@@ -64,362 +473,9 @@ class ConfigMediaMixin:
         if not config:
             return result
 
-        raw_modalities = config.get("modalities")
-        if isinstance(raw_modalities, dict):
-            result["modalities"] = normalize_modalities_config(raw_modalities)
-
-        legacy_enabled = None
-        if "enabled" in config:
-            legacy_enabled = _coerce_bool(config.get("enabled"), False)
-            result["enabled"] = legacy_enabled
-
-        if (
-            legacy_enabled is not None
-            and not isinstance(raw_modalities, dict)
-        ):
-            result["modalities"]["image"] = normalize_modality_policy("image", legacy_enabled)
-        elif legacy_enabled is not None and isinstance(raw_modalities, dict):
-            if not legacy_enabled:
-                for key in ("image", "audio", "video"):
-                    result["modalities"][key] = normalize_modality_policy(key, False)
-            elif not get_enabled_modalities(result.get("modalities")):
-                result["modalities"]["image"] = normalize_modality_policy("image", True)
-
-        if "selector" in config and config["selector"]:
-            result["selector"] = str(config["selector"]).strip()
-            if not result["selector"]:
-                result["selector"] = "img"
-
-        if "audio_selector" in config and config["audio_selector"]:
-            result["audio_selector"] = str(config["audio_selector"]).strip()
-            if not result["audio_selector"]:
-                result["audio_selector"] = default["audio_selector"]
-
-        if "video_selector" in config and config["video_selector"]:
-            result["video_selector"] = str(config["video_selector"]).strip()
-            if not result["video_selector"]:
-                result["video_selector"] = default["video_selector"]
-
-        if "container_selector" in config:
-            val = config["container_selector"]
-            result["container_selector"] = str(val).strip() if val else None
-
-        if "final_target_strategy" in config:
-            val = str(config["final_target_strategy"] or "").strip().lower()
-            if val in ("container", "latest_reply", "latest_visual_reply"):
-                result["final_target_strategy"] = val
-
-        if "latest_visual_column" in config:
-            val = str(config["latest_visual_column"] or "").strip().lower()
-            if val in ("left", "right"):
-                result["latest_visual_column"] = val
-
-        if "allow_container_fallback" in config:
-            result["allow_container_fallback"] = _coerce_bool(config.get("allow_container_fallback"), False)
-
-        if "force_postprocess" in config:
-            result["force_postprocess"] = _coerce_bool(config.get("force_postprocess"), False)
-
-        if "arena_image_generation" in config:
-            result["arena_image_generation"] = _coerce_bool(
-                config.get("arena_image_generation"), False
-            )
-
-        if "direct_postprocess_modalities" in config:
-            raw_direct_modalities = config.get("direct_postprocess_modalities")
-            if isinstance(raw_direct_modalities, (list, tuple, set)):
-                allowed_direct_modalities = []
-                for item in raw_direct_modalities:
-                    media_type = str(item or "").strip().lower()
-                    if (
-                        media_type in {"image", "audio", "video"}
-                        and is_modality_enabled(result.get("modalities"), media_type)
-                        and media_type not in allowed_direct_modalities
-                    ):
-                        allowed_direct_modalities.append(media_type)
-                if allowed_direct_modalities:
-                    result["direct_postprocess_modalities"] = allowed_direct_modalities
-
-        if "debounce_seconds" in config:
-            try:
-                val = float(config["debounce_seconds"])
-                result["debounce_seconds"] = max(0, min(val, 30))
-            except (ValueError, TypeError):
-                pass
-
-        if "wait_for_load" in config:
-            result["wait_for_load"] = _coerce_bool(config.get("wait_for_load"), True)
-
-        if "load_timeout_seconds" in config:
-            try:
-                val = float(config["load_timeout_seconds"])
-                result["load_timeout_seconds"] = max(1, min(val, 60))
-            except (ValueError, TypeError):
-                pass
-
-        if "download_blobs" in config:
-            result["download_blobs"] = _coerce_bool(config.get("download_blobs"), False)
-
-        if "max_size_mb" in config:
-            try:
-                val = int(config["max_size_mb"])
-                result["max_size_mb"] = max(1, min(val, 100))
-            except (ValueError, TypeError):
-                pass
-
-        if "canvas_export_mime" in config:
-            val = str(config["canvas_export_mime"] or "").strip().lower()
-            if val in {"image/jpeg", "image/webp", "image/png"}:
-                result["canvas_export_mime"] = val
-
-        if "canvas_export_quality" in config:
-            try:
-                val = float(config["canvas_export_quality"])
-                result["canvas_export_quality"] = max(0.1, min(val, 1.0))
-            except (ValueError, TypeError):
-                pass
-
-        if "src_allow_patterns" in config:
-            raw_patterns = config.get("src_allow_patterns")
-            if isinstance(raw_patterns, str):
-                raw_patterns = raw_patterns.replace("\r\n", "\n").replace(";", "\n").split("\n")
-            if isinstance(raw_patterns, (list, tuple, set)):
-                patterns = []
-                seen = set()
-                for item in raw_patterns:
-                    text = str(item or "").strip()
-                    if not text or text in seen:
-                        continue
-                    seen.add(text)
-                    patterns.append(text)
-                result["src_allow_patterns"] = patterns
-
-        if "mode" in config:
-            val = str(config["mode"]).lower()
-            if val in ("all", "first", "last"):
-                result["mode"] = val
-
-        if "audio_capture_enabled" in config:
-            result["audio_capture_enabled"] = _coerce_bool(config.get("audio_capture_enabled"), False)
-
-        if "audio_capture_mute_playback" in config:
-            result["audio_capture_mute_playback"] = _coerce_bool(config.get("audio_capture_mute_playback"), False)
-
-        if "audio_capture_preload_enabled" in config:
-            result["audio_capture_preload_enabled"] = _coerce_bool(config.get("audio_capture_preload_enabled"), False)
-
-        if "audio_capture_reload_before_workflow" in config:
-            result["audio_capture_reload_before_workflow"] = _coerce_bool(config.get("audio_capture_reload_before_workflow"), False)
-
-        if "audio_capture_preserve_graph" in config:
-            result["audio_capture_preserve_graph"] = _coerce_bool(config.get("audio_capture_preserve_graph"), False)
-
-        if "audio_capture_terminal_settle_seconds" in config:
-            try:
-                val = float(config["audio_capture_terminal_settle_seconds"])
-                result["audio_capture_terminal_settle_seconds"] = max(0.0, min(val, 5.0))
-            except (ValueError, TypeError):
-                pass
-
-        if "audio_trigger_selector" in config:
-            result["audio_trigger_selector"] = str(config["audio_trigger_selector"] or "").strip()
-
-        if "audio_trigger_labels" in config:
-            raw_labels = config.get("audio_trigger_labels")
-            if isinstance(raw_labels, (list, tuple)):
-                labels = [
-                    str(item).strip()
-                    for item in raw_labels
-                    if str(item).strip()
-                ]
-                if labels:
-                    result["audio_trigger_labels"] = labels
-
-        if "audio_capture_max_wait_seconds" in config:
-            try:
-                val = float(config["audio_capture_max_wait_seconds"])
-                result["audio_capture_max_wait_seconds"] = max(1.0, min(val, 120.0))
-            except (ValueError, TypeError):
-                pass
-
-        if "audio_capture_min_wait_seconds" in config:
-            try:
-                val = float(config["audio_capture_min_wait_seconds"])
-                result["audio_capture_min_wait_seconds"] = max(0.2, min(val, 30.0))
-            except (ValueError, TypeError):
-                pass
-
-        if "audio_capture_hard_max_wait_seconds" in config:
-            try:
-                val = float(config["audio_capture_hard_max_wait_seconds"])
-                result["audio_capture_hard_max_wait_seconds"] = max(1.0, min(val, 180.0))
-            except (ValueError, TypeError):
-                pass
-
-        if "audio_capture_estimated_chars_per_second" in config:
-            try:
-                val = float(config["audio_capture_estimated_chars_per_second"])
-                result["audio_capture_estimated_chars_per_second"] = max(1.0, min(val, 20.0))
-            except (ValueError, TypeError):
-                pass
-
-        if "audio_capture_wait_padding_seconds" in config:
-            try:
-                val = float(config["audio_capture_wait_padding_seconds"])
-                result["audio_capture_wait_padding_seconds"] = max(0.0, min(val, 10.0))
-            except (ValueError, TypeError):
-                pass
-
-        network_capture = dict(result.get("audio_network_capture") or {})
-        raw_network_capture = config.get("audio_network_capture")
-        if isinstance(raw_network_capture, dict):
-            if "enabled" in raw_network_capture:
-                network_capture["enabled"] = _coerce_bool(raw_network_capture.get("enabled"), False)
-            if "timeout_seconds" in raw_network_capture:
-                try:
-                    val = float(raw_network_capture["timeout_seconds"])
-                    network_capture["timeout_seconds"] = max(0.1, min(val, 15.0))
-                except (ValueError, TypeError):
-                    pass
-            if "transport" in raw_network_capture:
-                val = str(raw_network_capture["transport"] or "").strip()
-                if val in {"page_websocket_probe"}:
-                    network_capture["transport"] = val
-            if "extractor" in raw_network_capture:
-                val = str(raw_network_capture["extractor"] or "").strip()
-                if val in {"voicegenie_ogg_pages", "voicegenie_binary_stream"}:
-                    network_capture["extractor"] = val
-            if "settle_seconds" in raw_network_capture:
-                try:
-                    val = float(raw_network_capture["settle_seconds"])
-                    network_capture["settle_seconds"] = max(0.05, min(val, 5.0))
-                except (ValueError, TypeError):
-                    pass
-            if "url_patterns" in raw_network_capture:
-                raw_patterns = raw_network_capture.get("url_patterns")
-                if isinstance(raw_patterns, (list, tuple)):
-                    patterns = [
-                        str(item).strip()
-                        for item in raw_patterns
-                        if str(item).strip()
-                    ]
-                    if patterns:
-                        network_capture["url_patterns"] = patterns
-            if "max_payload_bytes" in raw_network_capture:
-                # 修复：此前漏处理该键，导致前端设置的单条载荷上限被静默重置为默认 10MB
-                try:
-                    val = int(raw_network_capture["max_payload_bytes"])
-                    network_capture["max_payload_bytes"] = max(65536, min(val, 104857600))
-                except (ValueError, TypeError):
-                    pass
-
-        # 兼容旧平铺字段，最终统一收口到新对象
-        if "audio_network_capture_enabled" in config:
-            network_capture["enabled"] = _coerce_bool(config.get("audio_network_capture_enabled"), False)
-
-        if "audio_network_capture_timeout_seconds" in config:
-            try:
-                val = float(config["audio_network_capture_timeout_seconds"])
-                network_capture["timeout_seconds"] = max(0.1, min(val, 15.0))
-            except (ValueError, TypeError):
-                pass
-
-        if "audio_network_url_patterns" in config:
-            raw_patterns = config.get("audio_network_url_patterns")
-            if isinstance(raw_patterns, (list, tuple)):
-                patterns = [
-                    str(item).strip()
-                    for item in raw_patterns
-                    if str(item).strip()
-                ]
-                if patterns:
-                    network_capture["url_patterns"] = patterns
-
-        result["audio_network_capture"] = network_capture
-
-        browser_tts_fallback = dict(result.get("audio_browser_tts_fallback") or {})
-        raw_browser_tts_fallback = config.get("audio_browser_tts_fallback")
-        if isinstance(raw_browser_tts_fallback, dict):
-            if "enabled" in raw_browser_tts_fallback:
-                browser_tts_fallback["enabled"] = _coerce_bool(raw_browser_tts_fallback.get("enabled"), False)
-            if "provider" in raw_browser_tts_fallback:
-                val = str(raw_browser_tts_fallback["provider"] or "").strip()
-                if val in {"doubao_samantha"}:
-                    browser_tts_fallback["provider"] = val
-            if "speaker" in raw_browser_tts_fallback:
-                val = str(raw_browser_tts_fallback["speaker"] or "").strip()
-                if val:
-                    browser_tts_fallback["speaker"] = val
-            if "speech_rate" in raw_browser_tts_fallback:
-                try:
-                    val = int(raw_browser_tts_fallback["speech_rate"])
-                    browser_tts_fallback["speech_rate"] = max(-100, min(val, 100))
-                except (ValueError, TypeError):
-                    pass
-            if "pitch" in raw_browser_tts_fallback:
-                try:
-                    val = int(raw_browser_tts_fallback["pitch"])
-                    browser_tts_fallback["pitch"] = max(-100, min(val, 100))
-                except (ValueError, TypeError):
-                    pass
-            if "format" in raw_browser_tts_fallback:
-                val = str(raw_browser_tts_fallback["format"] or "").strip().lower()
-                if val in {"aac"}:
-                    browser_tts_fallback["format"] = val
-            if "timeout_seconds" in raw_browser_tts_fallback:
-                try:
-                    val = float(raw_browser_tts_fallback["timeout_seconds"])
-                    browser_tts_fallback["timeout_seconds"] = max(3.0, min(val, 120.0))
-                except (ValueError, TypeError):
-                    pass
-            for key in (
-                "pc_version",
-                "aid",
-                "real_aid",
-                "language",
-                "device_platform",
-                "pkg_type",
-                "region",
-                "sys_region",
-                "use_olympus_account",
-                "samantha_web",
-            ):
-                if key in raw_browser_tts_fallback:
-                    val = str(raw_browser_tts_fallback[key] or "").strip()
-                    if val:
-                        browser_tts_fallback[key] = val
-
-        result["audio_browser_tts_fallback"] = browser_tts_fallback
-
-        if "audio_capture_poll_seconds" in config:
-            try:
-                val = float(config["audio_capture_poll_seconds"])
-                result["audio_capture_poll_seconds"] = max(0.05, min(val, 5.0))
-            except (ValueError, TypeError):
-                pass
-
-        if "audio_capture_silence_seconds" in config:
-            try:
-                val = float(config["audio_capture_silence_seconds"])
-                result["audio_capture_silence_seconds"] = max(0.2, min(val, 30.0))
-            except (ValueError, TypeError):
-                pass
-
-        if "audio_capture_activity_threshold" in config:
-            try:
-                val = float(config["audio_capture_activity_threshold"])
-                result["audio_capture_activity_threshold"] = max(0.0001, min(val, 0.2))
-            except (ValueError, TypeError):
-                pass
-
-        if "audio_capture_activity_silence_seconds" in config:
-            try:
-                val = float(config["audio_capture_activity_silence_seconds"])
-                result["audio_capture_activity_silence_seconds"] = max(0.2, min(val, 10.0))
-            except (ValueError, TypeError):
-                pass
-
-        result["enabled"] = bool(get_enabled_modalities(result.get("modalities")))
+        # 各组只依赖 (config, result, default)，按原顺序依次应用
+        for apply_group in _IMAGE_CONFIG_NORMALIZERS:
+            apply_group(config, result, default)
 
         return result
     def get_site_file_paste_config(self, domain: str, preset_name: str = None) -> dict:
