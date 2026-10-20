@@ -1935,6 +1935,34 @@ class BrowserWorkflowMixin:
             return _InterruptOutcome(False, True, step_index, "")
         return _InterruptOutcome(False, False, step_index, "")
 
+    def _abort_on_arena_battle_redirect(
+        self,
+        session: TabSession,
+        tab: Any,
+        arena_recovery_url: str,
+        log_context: str,
+    ) -> Generator[str, None, bool]:
+        """步骤失败后检测页面是否落在意外 Battle 页面。
+
+        原为 except (ElementNotFoundError, WorkflowError) 与 except Exception
+        两处各 13 行的重复块，只差日志里的一个前缀词（"步骤失败时" /
+        "通用异常时"）。合并后两条路径不可能再各自漂移。
+
+        返回 True 表示应终止工作流，调用方须置 workflow_aborted 并 break。
+        """
+        current_err_url = str(getattr(tab, "url", "") or "").strip()
+        if not is_arena_unexpected_battle_url(current_err_url):
+            return False
+        logger.warning(
+            f"[{session.id}] [ArenaDirectGuard] {log_context}检测到页面处于意外 Battle 页面: "
+            f"current_url={current_err_url}, recovery_url={arena_recovery_url}"
+        )
+        yield self.formatter.pack_error(
+            "stream_terminal_error:arena_direct_unexpected_battle_redirect",
+            code="arena_direct_unexpected_battle_redirect",
+        )
+        return True
+
     @attachment_scope
     def _execute_workflow_stream_once(
         self,
@@ -2758,17 +2786,10 @@ class BrowserWorkflowMixin:
                             f"error={str(e).strip() or type(e).__name__}"
                         )
                         if arena_direct_active:
-                            current_err_url = str(getattr(tab, "url", "") or "").strip()
-                            if is_arena_unexpected_battle_url(current_err_url):
-                                logger.warning(
-                                    f"[{session.id}] [ArenaDirectGuard] 步骤失败时检测到页面处于意外 Battle 页面: "
-                                    f"current_url={current_err_url}, recovery_url={arena_recovery_url}"
-                                )
+                            if (yield from self._abort_on_arena_battle_redirect(
+                                session, tab, arena_recovery_url, "步骤失败时"
+                            )):
                                 workflow_aborted = True
-                                yield self.formatter.pack_error(
-                                    "stream_terminal_error:arena_direct_unexpected_battle_redirect",
-                                    code="arena_direct_unexpected_battle_redirect",
-                                )
                                 break
 
                         if isinstance(e, WorkflowError):
@@ -2817,17 +2838,10 @@ class BrowserWorkflowMixin:
                             f"optional={bool(optional)}, error={str(e).strip() or type(e).__name__}"
                         )
                         if arena_direct_active:
-                            current_err_url = str(getattr(tab, "url", "") or "").strip()
-                            if is_arena_unexpected_battle_url(current_err_url):
-                                logger.warning(
-                                    f"[{session.id}] [ArenaDirectGuard] 通用异常时检测到页面处于意外 Battle 页面: "
-                                    f"current_url={current_err_url}, recovery_url={arena_recovery_url}"
-                                )
+                            if (yield from self._abort_on_arena_battle_redirect(
+                                session, tab, arena_recovery_url, "通用异常时"
+                            )):
                                 workflow_aborted = True
-                                yield self.formatter.pack_error(
-                                    "stream_terminal_error:arena_direct_unexpected_battle_redirect",
-                                    code="arena_direct_unexpected_battle_redirect",
-                                )
                                 break
                         if not optional:
                             yield self.formatter.pack_error(f"执行中断: {e!s}")
