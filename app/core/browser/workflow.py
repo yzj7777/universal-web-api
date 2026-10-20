@@ -4,7 +4,17 @@ import contextlib
 import json
 import re
 import time
-from typing import TYPE_CHECKING, Any, Callable, Dict, Generator, List, Mapping, Optional
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    List,
+    Mapping,
+    NamedTuple,
+    Optional,
+)
 
 from app.core.config import (
     BrowserConstants,
@@ -50,6 +60,39 @@ from app.utils.site_url import extract_remote_site_domain, tab_url_matches
 
 if TYPE_CHECKING:
     pass
+
+
+# ---------------------------------------------------------------------------
+# 工作流入口守卫
+#
+# _execute_workflow_stream_once 原先把这 6 条"致命前置错误"判定内联在函数
+# 开头（55 行、8 个分支）。它们与主循环毫无数据耦合，只是各自 yield 一个
+# 错误块后 return，因此提取为 _resolve_workflow_entry + 下面的码表。
+# 判定顺序即 _resolve_workflow_entry 里的书写顺序，由
+# tests/test_workflow_entry_guards.py 锁定。
+# ---------------------------------------------------------------------------
+
+_WORKFLOW_INVALID_ENTRY_URLS = ("about:blank", "chrome://newtab/", "chrome://new-tab-page/")
+
+_WORKFLOW_ENTRY_ERROR_MESSAGES: Dict[str, str] = {
+    "cancelled": "请求已取消",
+    "tab_closed": "标签页已关闭或失效，请刷新页面后重试",
+    "no_page": "请先打开目标AI网站",
+    "blank_page": "当前是空白页，请先打开目标AI网站",
+    "page_error": "页面加载错误，请刷新后重试",
+    "invalid_url": "当前页面不是可解析的网站，请打开真实的远程站点页面后再试",
+}
+
+
+class _WorkflowEntry(NamedTuple):
+    """工作流入口解析结果。error_code 为 None 表示可以继续。
+
+    只回传 domain：url 仅被守卫块自身使用，主流程改从 tab 现取
+    （原代码在守卫之后也是用 getattr(tab, "url", "") 重新读取的）。
+    """
+
+    error_code: Optional[str]
+    domain: str
 
 
 class BrowserWorkflowMixin:
@@ -1570,6 +1613,48 @@ class BrowserWorkflowMixin:
             obj in lowered for obj in chinese_objects
         )
 
+    def _resolve_workflow_entry(
+        self,
+        session: TabSession,
+        tab: Any,
+        stop_checker: Callable[[], bool],
+    ) -> "_WorkflowEntry":
+        """判定工作流入口的致命前置条件，返回解析结果。
+
+        error_code 非 None 时调用方应立即 yield 对应错误并结束；
+        判定顺序即下面各分支的书写顺序，不可调换（取消优先于标签页
+        访问，空白页优先于网络错误）。
+        """
+        if stop_checker():
+            return _WorkflowEntry("cancelled", "")
+
+        try:
+            url = tab.url
+        except Exception as e:
+            logger.warning(f"[{session.id}] 标签页访问失败: {e}")
+            session.mark_error("tab_access_failed")
+            return _WorkflowEntry("tab_closed", "")
+
+        if not url:
+            return _WorkflowEntry("no_page", "")
+
+        if url in _WORKFLOW_INVALID_ENTRY_URLS:
+            return _WorkflowEntry("blank_page", "")
+
+        if "chrome-error://" in url or "about:neterror" in url:
+            return _WorkflowEntry("page_error", "")
+
+        try:
+            domain = extract_remote_site_domain(url)
+            if not domain:
+                raise ValueError(f"not a remote site url: {url}")
+            session.current_domain = domain
+        except Exception as e:
+            logger.warning(f"[{session.id}] URL 解析失败: {url}, 错误: {e}")
+            return _WorkflowEntry("invalid_url", "")
+
+        return _WorkflowEntry(None, domain)
+
     @attachment_scope
     def _execute_workflow_stream_once(
         self,
@@ -1604,61 +1689,14 @@ class BrowserWorkflowMixin:
         except Exception:
             workflow_priority_value = 2
 
-        if effective_stop_checker():
-            yield self.formatter.pack_error("请求已取消", code="cancelled")
-            yield self.formatter.pack_finish()
-            return
-
-        try:
-            url = tab.url
-        except Exception as e:
-            logger.warning(f"[{session.id}] 标签页访问失败: {e}")
-            session.mark_error("tab_access_failed")
+        entry = self._resolve_workflow_entry(session, tab, effective_stop_checker)
+        if entry.error_code is not None:
             yield self.formatter.pack_error(
-                "标签页已关闭或失效，请刷新页面后重试",
-                code="tab_closed"
+                _WORKFLOW_ENTRY_ERROR_MESSAGES[entry.error_code], code=entry.error_code
             )
             yield self.formatter.pack_finish()
             return
-
-        if not url:
-            yield self.formatter.pack_error(
-                "请先打开目标AI网站",
-                code="no_page"
-            )
-            yield self.formatter.pack_finish()
-            return
-
-        invalid_urls = ("about:blank", "chrome://newtab/", "chrome://new-tab-page/")
-        if url in invalid_urls:
-            yield self.formatter.pack_error(
-                "当前是空白页，请先打开目标AI网站",
-                code="blank_page"
-            )
-            yield self.formatter.pack_finish()
-            return
-
-        if "chrome-error://" in url or "about:neterror" in url:
-            yield self.formatter.pack_error(
-                "页面加载错误，请刷新后重试",
-                code="page_error"
-            )
-            yield self.formatter.pack_finish()
-            return
-
-        try:
-            domain = extract_remote_site_domain(url)
-            if not domain:
-                raise ValueError(f"not a remote site url: {url}")
-            session.current_domain = domain
-        except Exception as e:
-            logger.warning(f"[{session.id}] URL 解析失败: {url}, 错误: {e}")
-            yield self.formatter.pack_error(
-                "当前页面不是可解析的网站，请打开真实的远程站点页面后再试",
-                code="invalid_url"
-            )
-            yield self.formatter.pack_finish()
-            return
+        domain = entry.domain
 
         tab_url = getattr(tab, "url", "")
         tab_id = getattr(tab, "tab_id", "")
