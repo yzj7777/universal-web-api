@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import time
 import uuid
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
@@ -43,6 +44,24 @@ from app.utils.site_url import extract_remote_site_domain
 
 if TYPE_CHECKING:
     pass
+
+
+@dataclass(frozen=True)
+class _LateMediaScan:
+    """一次 DOM 重扫后的媒体快照。
+
+    `_extract_media_after_stream` 里两段延迟等待（pending 补扫、无信号盲等）
+    每轮循环都要重扫并重算 image/audio/video 三个列表，原先是两份逐字重复
+    的代码。抽出这个不可变快照后，两份循环共用同一个 `_rescan_ready_media`。
+    """
+
+    last_element: Any = None
+    media_items: List[Dict] = field(default_factory=list)
+    ready_media_items: List[Dict] = field(default_factory=list)
+    image_items: List[Dict] = field(default_factory=list)
+    audio_items: List[Dict] = field(default_factory=list)
+    video_items: List[Dict] = field(default_factory=list)
+    container_mode: Optional[str] = None
 
 
 class BrowserMediaMixin:
@@ -295,6 +314,21 @@ class BrowserMediaMixin:
             "probe_if_trigger_found",
             "always_probe",
         }
+
+    @staticmethod
+    def _pending_kinds_satisfied(pending_kinds, scan: _LateMediaScan) -> bool:
+        """判定待渲染的媒体类型是否都已有结果。
+
+        audio 允许由 video 满足（视频轨道里能拿到音频时无需再等单独的音频），
+        这条规则原先内联在延迟补扫的循环体里。
+        """
+        if "image" in pending_kinds and not scan.image_items:
+            return False
+        if "audio" in pending_kinds and not (scan.audio_items or scan.video_items):
+            return False
+        if "video" in pending_kinds and not scan.video_items:
+            return False
+        return True
 
     @staticmethod
     def _media_policy_allows_audio_probe(
@@ -1373,6 +1407,65 @@ class BrowserMediaMixin:
 
                 return self._dedupe_media_items(fallback_items)
 
+            def _items_of_media_type(
+                items: List[Dict],
+                media_type: str,
+            ) -> List[Dict]:
+                return [item for item in items if item.get("media_type") == media_type]
+
+            def _rescan_ready_media(
+                scan: _LateMediaScan,
+                empty_reason: str,
+                *,
+                allow_page_scan: bool,
+            ) -> _LateMediaScan:
+                """重扫一次候选容器并刷新媒体快照。
+
+                找不到候选元素或选不中目标时原样返回（对应原代码里的
+                `continue`），只有真正重扫成功才刷新各媒体类型列表。
+                `container_mode` 无论是否命中都会被刷新，与原行为一致。
+                """
+                elements, container_mode = _find_candidate_elements(timeout=0.5)
+                scan = replace(scan, container_mode=container_mode)
+                if not elements:
+                    return scan
+
+                selected = _select_target_element(elements)
+                if selected is None:
+                    return scan
+
+                media_items = _extract_media_once(selected, quiet=True)
+                ready_media_items = _apply_stream_media_fallback(
+                    self._filter_ready_media_items(media_items, image_config)
+                )
+                scan = replace(
+                    scan,
+                    last_element=selected,
+                    media_items=media_items,
+                    ready_media_items=ready_media_items,
+                    image_items=_items_of_media_type(ready_media_items, "image"),
+                    audio_items=_items_of_media_type(ready_media_items, "audio"),
+                    video_items=_items_of_media_type(ready_media_items, "video"),
+                )
+
+                if allow_page_scan and not scan.image_items and not fallback_stream_media_items:
+                    fresh_page_media_items = _extract_fresh_media_from_page_scope(
+                        empty_reason,
+                        quiet=True,
+                    )
+                    if fresh_page_media_items:
+                        merged_media_items = self._dedupe_media_items(
+                            list(scan.ready_media_items) + fresh_page_media_items
+                        )
+                        scan = replace(
+                            scan,
+                            ready_media_items=merged_media_items,
+                            image_items=_items_of_media_type(merged_media_items, "image"),
+                            audio_items=_items_of_media_type(merged_media_items, "audio"),
+                            video_items=_items_of_media_type(merged_media_items, "video"),
+                        )
+                return scan
+
             request_likely_image = self._looks_like_image_generation_request(request_text_hint)
             media_items = [] if only_audio_mode else _extract_media_once(last_element)
             ready_media_items = _apply_stream_media_fallback(
@@ -1513,6 +1606,15 @@ class BrowserMediaMixin:
                 pending_kinds.discard("image")
                 logger.warning("当前回复包含终止错误且没有本轮新图，跳过图片等待与历史图回退")
 
+            scan = _LateMediaScan(
+                last_element=last_element,
+                media_items=media_items,
+                ready_media_items=ready_media_items,
+                image_items=image_items,
+                audio_items=audio_items,
+                video_items=video_items,
+                container_mode=container_mode,
+            )
             if pending_kinds and not direct_scan_only and not effective_stop_checker():
                 base_timeout = float(image_config.get("load_timeout_seconds", 5.0) or 5.0)
                 late_wait_timeout = float(
@@ -1541,53 +1643,17 @@ class BrowserMediaMixin:
 
                 while time.time() < deadline and not effective_stop_checker():
                     time.sleep(max(0.2, poll_interval))
-                    elements, container_mode = _find_candidate_elements(timeout=0.5)
-                    if not elements:
-                        continue
-                    selected = _select_target_element(elements)
-                    if selected is None:
-                        continue
-                    last_element = selected
-                    media_items = _extract_media_once(last_element, quiet=True)
-                    ready_media_items = _apply_stream_media_fallback(
-                        self._filter_ready_media_items(media_items, image_config)
+                    scan = _rescan_ready_media(
+                        scan,
+                        "pending_wait_empty",
+                        allow_page_scan="image" in pending_kinds,
                     )
-                    image_items = [item for item in ready_media_items if item.get("media_type") == "image"]
-                    audio_items = [item for item in ready_media_items if item.get("media_type") == "audio"]
-                    video_items = [item for item in ready_media_items if item.get("media_type") == "video"]
-
-                    if "image" in pending_kinds and not image_items and not fallback_stream_media_items:
-                        fresh_page_media_items = _extract_fresh_media_from_page_scope(
-                            "pending_wait_empty",
-                            quiet=True,
-                        )
-                        if fresh_page_media_items:
-                            ready_media_items = self._dedupe_media_items(
-                                list(ready_media_items) + fresh_page_media_items
-                            )
-                            image_items = [
-                                item for item in ready_media_items if item.get("media_type") == "image"
-                            ]
-                            audio_items = [
-                                item for item in ready_media_items if item.get("media_type") == "audio"
-                            ]
-                            video_items = [
-                                item for item in ready_media_items if item.get("media_type") == "video"
-                            ]
-
-                    satisfied = True
-                    if "image" in pending_kinds and not image_items:
-                        satisfied = False
-                    if "audio" in pending_kinds and not (audio_items or video_items):
-                        satisfied = False
-                    if "video" in pending_kinds and not video_items:
-                        satisfied = False
-
-                    if satisfied:
+                    if self._pending_kinds_satisfied(pending_kinds, scan):
                         kinds_label = ",".join(sorted(pending_kinds))
                         logger.debug(
                             f"延迟媒体渲染已捕获: kinds={kinds_label} "
-                            f"(late_wait={late_wait_timeout:.1f}s, container={container_mode or 'unknown'})"
+                            f"(late_wait={late_wait_timeout:.1f}s, "
+                            f"container={scan.container_mode or 'unknown'})"
                         )
                         wait_satisfied = True
                         break
@@ -1601,7 +1667,7 @@ class BrowserMediaMixin:
             should_probe_late_image_render = (
                 is_modality_enabled(modalities, "image")
                 and self._media_policy_allows_signal_wait(image_config, "image")
-                and not image_items
+                and not scan.image_items
                 and not pending_kinds
                 and not only_audio_mode
                 and not effective_stop_checker()
@@ -1633,47 +1699,26 @@ class BrowserMediaMixin:
 
                 while time.time() < deadline and not effective_stop_checker():
                     time.sleep(max(0.2, poll_interval))
-                    elements, container_mode = _find_candidate_elements(timeout=0.5)
-                    if not elements:
-                        continue
-
-                    selected = _select_target_element(elements)
-                    if selected is None:
-                        continue
-                    last_element = selected
-                    media_items = _extract_media_once(last_element, quiet=True)
-                    ready_media_items = _apply_stream_media_fallback(
-                        self._filter_ready_media_items(media_items, image_config)
+                    scan = _rescan_ready_media(
+                        scan,
+                        "blind_wait_empty",
+                        allow_page_scan=True,
                     )
-                    image_items = [item for item in ready_media_items if item.get("media_type") == "image"]
-                    audio_items = [item for item in ready_media_items if item.get("media_type") == "audio"]
-                    video_items = [item for item in ready_media_items if item.get("media_type") == "video"]
-
-                    if not image_items and not fallback_stream_media_items:
-                        fresh_page_media_items = _extract_fresh_media_from_page_scope(
-                            "blind_wait_empty",
-                            quiet=True,
-                        )
-                        if fresh_page_media_items:
-                            ready_media_items = self._dedupe_media_items(
-                                list(ready_media_items) + fresh_page_media_items
-                            )
-                            image_items = [
-                                item for item in ready_media_items if item.get("media_type") == "image"
-                            ]
-                            audio_items = [
-                                item for item in ready_media_items if item.get("media_type") == "audio"
-                            ]
-                            video_items = [
-                                item for item in ready_media_items if item.get("media_type") == "video"
-                            ]
-
-                    if image_items:
+                    if scan.image_items:
                         logger.debug(
                             "无显式占位信号，但已在延迟轮询中捕获到图片结果: "
-                            f"late_wait={late_image_wait_timeout:.1f}s, container={container_mode or 'unknown'}"
+                            f"late_wait={late_image_wait_timeout:.1f}s, "
+                            f"container={scan.container_mode or 'unknown'}"
                         )
                         break
+
+            # 延迟等待可能已刷新快照，回写局部变量供后续音频兜底使用
+            last_element = scan.last_element
+            media_items = scan.media_items
+            ready_media_items = scan.ready_media_items
+            image_items = scan.image_items
+            audio_items = scan.audio_items
+            video_items = scan.video_items
 
             should_try_audio_capture = (
                 _audio_trigger_available(
