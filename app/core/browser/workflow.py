@@ -95,6 +95,15 @@ class _WorkflowEntry(NamedTuple):
     domain: str
 
 
+class _InterruptOutcome(NamedTuple):
+    """_handle_workflow_interrupt 的结果，决定调用方的控制流。"""
+
+    aborted: bool        # 命令要求中止整个工作流
+    handled: bool        # 中断已处理：跳过本轮步骤
+    step_index: int      # 下一步索引
+    abort_message: str   # aborted 时的错误文案
+
+
 class BrowserWorkflowMixin:
     """工作流执行、流式/非流式响应、中断处理相关的混入类"""
 
@@ -1846,6 +1855,86 @@ class BrowserWorkflowMixin:
             logger.warning(f"[{session.id}] 多模态提取失败: {e}")
         return workflow_aborted
 
+    def _handle_workflow_interrupt(
+        self,
+        session: TabSession,
+        command_engine: Any,
+        step_index: int,
+        workflow: List[Dict[str, Any]],
+        flow_program: Optional[FlowProgram],
+        executor: WorkflowExecutor,
+        selectors: Dict[str, Any],
+    ) -> Generator[str, None, "_InterruptOutcome"]:
+        """处理工作流执行过程中的命令中断。
+
+        原为 _execute_workflow_stream_once 主循环内的 62 行内联块。返回
+        _InterruptOutcome，由调用方决定 break / continue / 继续本轮：
+          aborted  -> 产出错误块后 break
+          handled  -> 中断已处理，跳过本轮步骤（step_index 可能前移）
+          两者皆否 -> 中断未被处理，不影响本轮步骤，落到下一条语句
+        """
+        workflow_abort_message = ""
+        interrupt_result = (
+            command_engine.handle_pending_workflow_interrupts(session)
+            if command_engine is not None
+            else {"handled": False, "abort": False, "message": ""}
+        )
+        if interrupt_result.get("abort"):
+            # workflow_aborted 由调用方据 outcome.aborted 设置
+            workflow_abort_message = str(
+                interrupt_result.get("message") or "工作流已被命令打断"
+            )
+            logger.error(
+                f"[{session.id}] 工作流被命令打断: "
+                f"{interrupt_result.get('abort_by') or 'unknown'}"
+            )
+            yield self.formatter.pack_error(
+                workflow_abort_message,
+                code="workflow_interrupted",
+            )
+            return _InterruptOutcome(True, False, step_index, workflow_abort_message)
+        if interrupt_result.get("handled"):
+            logger.info(f"[{session.id}] 工作流恢复执行")
+            try:
+                current_action = str(
+                    (workflow[step_index] or {}).get("action") or ""
+                ).strip().upper()
+                executor.rebuild_network_listener_after_external_interruption(
+                    "workflow_interrupt_resume",
+                    allow_dom_image_resume=current_action
+                    in {"STREAM_WAIT", "STREAM_OUTPUT"},
+                )
+            except Exception:
+                pass
+
+            stream_index = None
+            try:
+                if flow_program is None and executor.page_looks_generating(selectors.get("send_btn", "")):
+                    stream_index = self._find_next_stream_step_index(workflow, step_index)
+            except Exception:
+                stream_index = None
+
+            if stream_index is not None and stream_index != step_index:
+                logger.info(
+                    f"[{session.id}] 外部验证后检测到页面已在生成，"
+                    f"跳过到监听步骤: {step_index + 1}->{stream_index + 1}"
+                )
+                return _InterruptOutcome(False, True, stream_index, "")
+                # 出口已在上一行返回
+
+            resume_index = (self._find_resume_step_after_interrupt(
+                workflow, step_index,
+            ) if flow_program is None else step_index)
+            if resume_index != step_index:
+                logger.info(
+                    f"[{session.id}] 外部验证后跳过清理/停止步骤，"
+                    f"恢复到安全步骤: {step_index + 1}->{resume_index + 1}"
+                )
+                return _InterruptOutcome(False, True, resume_index, "")
+                # 出口已在上一行返回
+            return _InterruptOutcome(False, True, step_index, "")
+        return _InterruptOutcome(False, False, step_index, "")
+
     @attachment_scope
     def _execute_workflow_stream_once(
         self,
@@ -2389,64 +2478,16 @@ class BrowserWorkflowMixin:
                     if stop_reason == "command_interrupt" or (
                         command_engine is not None and command_engine.workflow_interrupt_requested(session)
                     ):
-                        interrupt_result = (
-                            command_engine.handle_pending_workflow_interrupts(session)
-                            if command_engine is not None
-                            else {"handled": False, "abort": False, "message": ""}
+                        outcome = yield from self._handle_workflow_interrupt(
+                            session, command_engine, step_index, workflow,
+                            flow_program, executor, selectors,
                         )
-                        if interrupt_result.get("abort"):
+                        if outcome.aborted:
                             workflow_aborted = True
-                            workflow_abort_message = str(
-                                interrupt_result.get("message") or "工作流已被命令打断"
-                            )
-                            logger.error(
-                                f"[{session.id}] 工作流被命令打断: "
-                                f"{interrupt_result.get('abort_by') or 'unknown'}"
-                            )
-                            yield self.formatter.pack_error(
-                                workflow_abort_message,
-                                code="workflow_interrupted",
-                            )
+                            workflow_abort_message = outcome.abort_message
                             break
-                        if interrupt_result.get("handled"):
-                            logger.info(f"[{session.id}] 工作流恢复执行")
-                            try:
-                                current_action = str(
-                                    (workflow[step_index] or {}).get("action") or ""
-                                ).strip().upper()
-                                executor.rebuild_network_listener_after_external_interruption(
-                                    "workflow_interrupt_resume",
-                                    allow_dom_image_resume=current_action
-                                    in {"STREAM_WAIT", "STREAM_OUTPUT"},
-                                )
-                            except Exception:
-                                pass
-
-                            stream_index = None
-                            try:
-                                if flow_program is None and executor.page_looks_generating(selectors.get("send_btn", "")):
-                                    stream_index = self._find_next_stream_step_index(workflow, step_index)
-                            except Exception:
-                                stream_index = None
-
-                            if stream_index is not None and stream_index != step_index:
-                                logger.info(
-                                    f"[{session.id}] 外部验证后检测到页面已在生成，"
-                                    f"跳过到监听步骤: {step_index + 1}->{stream_index + 1}"
-                                )
-                                step_index = stream_index
-                                continue
-
-                            resume_index = (self._find_resume_step_after_interrupt(
-                                workflow, step_index,
-                            ) if flow_program is None else step_index)
-                            if resume_index != step_index:
-                                logger.info(
-                                    f"[{session.id}] 外部验证后跳过清理/停止步骤，"
-                                    f"恢复到安全步骤: {step_index + 1}->{resume_index + 1}"
-                                )
-                                step_index = resume_index
-                                continue
+                        step_index = outcome.step_index
+                        if outcome.handled:
                             continue
 
                     if effective_stop_checker():
