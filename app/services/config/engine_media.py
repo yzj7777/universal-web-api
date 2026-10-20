@@ -431,6 +431,133 @@ _IMAGE_CONFIG_NORMALIZERS = (
 )
 
 
+# ==================== 文件粘贴配置的逐键归一化 ====================
+#
+# _validate_file_paste_config 原本是 12 段 `if '<key>' in config:` 抄同样的
+# 模式：取值 -> 归一化 -> 写回 result，转换失败则保持默认。下面把它拆成
+# 一张 (键, 归一化函数) 表；表中顺序即应用顺序，与原实现一致。
+
+
+def _norm_file_paste_bool(key: str):
+    """取值强制转 bool 的字段。"""
+
+    def _apply(result: Dict, config: Dict) -> None:
+        result[key] = _coerce_bool(config.get(key), False)
+
+    return _apply
+
+
+def _norm_file_paste_hint(key: str, limit: int = 500):
+    """纯文本字段：去空白后截断到 limit 个字符。"""
+
+    def _apply(result: Dict, config: Dict) -> None:
+        value = str(config[key]).strip()
+        result[key] = value[:limit] if value else ""
+
+    return _apply
+
+
+def _norm_file_paste_clamped_float(key: str, low: float, high: float):
+    """数值窗口字段：转 float 后钳制到 [low, high]；转换失败保持默认。"""
+
+    def _apply(result: Dict, config: Dict) -> None:
+        try:
+            value = float(config[key])
+            result[key] = max(low, min(value, high))
+        except (ValueError, TypeError):
+            pass
+
+    return _apply
+
+
+def _norm_file_paste_threshold(result: Dict, config: Dict) -> None:
+    """threshold：先 int() 再钳制；转换失败保持默认。"""
+    try:
+        value = int(config["threshold"])
+        result["threshold"] = max(1000, min(value, 10000000))
+    except (ValueError, TypeError):
+        pass
+
+
+def _norm_file_paste_temp_file_type(result: Dict, config: Dict) -> None:
+    """temp_file_type：归一化后必须落在枚举内，否则保持默认（不报错）。"""
+    value = str(config.get("temp_file_type") or "").strip().lower().lstrip(".")
+    if value in {"txt", "pdf", "chunk", "error"}:
+        result["temp_file_type"] = value
+
+
+def _norm_file_paste_hint_text(result: Dict, config: Dict) -> None:
+    """hint_text：截断后写入，并按 temp_file_type 联动三个分类型文本。
+
+    联动只作用于**未显式给出**的分类型文本，显式给出的稍后由各自的归一化
+    函数覆盖——这就是表里 hint_text 必须排在三个分类型键之前的原因。
+    """
+    value = str(config["hint_text"]).strip()
+    hint_value = value[:500] if value else ""
+    result["hint_text"] = hint_value
+
+    # 智能向后兼容：结合老配置的策略类型，防止新字段被无关的旧数据污染
+    old_temp_type = config.get("temp_file_type", "txt")
+
+    if "txt_hint_text" not in config:
+        result["txt_hint_text"] = hint_value if old_temp_type == "txt" else "完全专注于文件内容"
+    if "pdf_hint_text" not in config:
+        result["pdf_hint_text"] = hint_value if old_temp_type == "pdf" else "完全专注于文件内容"
+    if "error_hint_text" not in config:
+        result["error_hint_text"] = (
+            hint_value if old_temp_type == "error" else "输入文本长度超过限制，已中止发送"
+        )
+
+
+def _norm_file_paste_post_upload_selector(result: Dict, config: Dict) -> None:
+    value = str(config["post_upload_input_selector"] or "").strip()
+    result["post_upload_input_selector"] = value[:500] if value else ""
+
+
+# (键, 归一化函数)，顺序与原实现逐字一致
+_FILE_PASTE_NORMALIZERS = (
+    ("enabled", _norm_file_paste_bool("enabled")),
+    ("threshold", _norm_file_paste_threshold),
+    ("temp_file_type", _norm_file_paste_temp_file_type),
+    ("hint_text", _norm_file_paste_hint_text),
+    ("txt_hint_text", _norm_file_paste_hint("txt_hint_text")),
+    ("pdf_hint_text", _norm_file_paste_hint("pdf_hint_text")),
+    ("error_hint_text", _norm_file_paste_hint("error_hint_text")),
+    ("reacquire_input_after_upload", _norm_file_paste_bool("reacquire_input_after_upload")),
+    ("post_upload_input_selector", _norm_file_paste_post_upload_selector),
+    ("post_upload_settle", _norm_file_paste_clamped_float("post_upload_settle", 0.0, 30.0)),
+    ("upload_signal_timeout", _norm_file_paste_clamped_float("upload_signal_timeout", 0.5, 120.0)),
+    ("upload_signal_grace", _norm_file_paste_clamped_float("upload_signal_grace", 0.0, 120.0)),
+)
+
+
+def _normalize_file_paste_state_probe(default_state_probe: Dict, raw_state_probe: Any) -> Dict:
+    """state_probe 子段：以默认值为基底，逐键覆盖。非 dict 输入等价于缺省。"""
+    state_probe = copy.deepcopy(default_state_probe)
+    if isinstance(raw_state_probe, dict):
+        if "enabled" in raw_state_probe:
+            state_probe["enabled"] = _coerce_bool(raw_state_probe.get("enabled"), False)
+        if "code" in raw_state_probe:
+            code = str(raw_state_probe["code"] or "").strip()
+            state_probe["code"] = code[:20000] if code else ""
+    return state_probe
+
+
+def _merge_legacy_subsection(
+    legacy_stream_config: Optional[Dict[str, Any]],
+    config: Dict,
+    key: str,
+) -> Dict:
+    """老配置的同名子段作基底，当前 config 里的同名子段覆盖它。"""
+    merged: Dict = {}
+    if isinstance(legacy_stream_config, dict) and isinstance(legacy_stream_config.get(key), dict):
+        merged.update(legacy_stream_config.get(key) or {})
+    raw = config.get(key)
+    if isinstance(raw, dict):
+        merged.update(raw)
+    return merged
+
+
 class ConfigMediaMixin:
     """图片提取、文件粘贴、提示词填充配置与图片预设"""
 
@@ -586,110 +713,38 @@ class ConfigMediaMixin:
         if not isinstance(config, dict):
             config = {}
 
-        if "enabled" in config:
-            result["enabled"] = _coerce_bool(config.get("enabled"), False)
+        # 逐键归一化：表里顺序即应用顺序（hint_text 必须排在三个分类型文本之前）
+        for key, normalize in _FILE_PASTE_NORMALIZERS:
+            if key in config:
+                normalize(result, config)
 
-        if "threshold" in config:
-            try:
-                val = int(config["threshold"])
-                result["threshold"] = max(1000, min(val, 10000000))
-            except (ValueError, TypeError):
-                pass
-
-        if "temp_file_type" in config:
-            val = str(config.get("temp_file_type") or "").strip().lower().lstrip(".")
-            if val in {"txt", "pdf", "chunk", "error"}:
-                result["temp_file_type"] = val
-
-        if "hint_text" in config:
-            val = str(config["hint_text"]).strip()
-            # 限制长度，避免过长的引导文本
-            hint_val = val[:500] if val else ""
-            result["hint_text"] = hint_val
-
-            # 智能向后兼容：结合老配置的策略类型，防止新字段被无关的旧数据污染
-            old_temp_type = config.get("temp_file_type", "txt")
-
-            if "txt_hint_text" not in config:
-                result["txt_hint_text"] = hint_val if old_temp_type == "txt" else "完全专注于文件内容"
-            if "pdf_hint_text" not in config:
-                result["pdf_hint_text"] = hint_val if old_temp_type == "pdf" else "完全专注于文件内容"
-            if "error_hint_text" not in config:
-                result["error_hint_text"] = hint_val if old_temp_type == "error" else "输入文本长度超过限制，已中止发送"
-
-        if "txt_hint_text" in config:
-            val = str(config["txt_hint_text"]).strip()
-            result["txt_hint_text"] = val[:500] if val else ""
-
-        if "pdf_hint_text" in config:
-            val = str(config["pdf_hint_text"]).strip()
-            result["pdf_hint_text"] = val[:500] if val else ""
-
-        if "error_hint_text" in config:
-            val = str(config["error_hint_text"]).strip()
-            result["error_hint_text"] = val[:500] if val else ""
-
-        if "reacquire_input_after_upload" in config:
-            result["reacquire_input_after_upload"] = _coerce_bool(config.get("reacquire_input_after_upload"), False)
-
-        if "post_upload_input_selector" in config:
-            val = str(config["post_upload_input_selector"] or "").strip()
-            result["post_upload_input_selector"] = val[:500] if val else ""
-
-        if "post_upload_settle" in config:
-            try:
-                val = float(config["post_upload_settle"])
-                result["post_upload_settle"] = max(0.0, min(val, 30.0))
-            except (ValueError, TypeError):
-                pass
-
-        if "upload_signal_timeout" in config:
-            try:
-                val = float(config["upload_signal_timeout"])
-                result["upload_signal_timeout"] = max(0.5, min(val, 120.0))
-            except (ValueError, TypeError):
-                pass
-
-        if "upload_signal_grace" in config:
-            try:
-                val = float(config["upload_signal_grace"])
-                result["upload_signal_grace"] = max(0.0, min(val, 120.0))
-            except (ValueError, TypeError):
-                pass
-
-        default_state_probe = copy.deepcopy(default.get("state_probe") or {})
-        raw_state_probe = config.get("state_probe")
-        state_probe = copy.deepcopy(default_state_probe)
-        if isinstance(raw_state_probe, dict):
-            if "enabled" in raw_state_probe:
-                state_probe["enabled"] = _coerce_bool(raw_state_probe.get("enabled"), False)
-            if "code" in raw_state_probe:
-                code = str(raw_state_probe["code"] or "").strip()
-                state_probe["code"] = code[:20000] if code else ""
+        state_probe = _normalize_file_paste_state_probe(
+            copy.deepcopy(default.get("state_probe") or {}),
+            config.get("state_probe"),
+        )
         if state_probe:
             result["state_probe"] = state_probe
 
-        legacy_send_confirmation = {}
-        if isinstance(legacy_stream_config, dict) and isinstance(legacy_stream_config.get("send_confirmation"), dict):
-            legacy_send_confirmation.update(legacy_stream_config.get("send_confirmation") or {})
-        raw_send_confirmation = config.get("send_confirmation")
-        if isinstance(raw_send_confirmation, dict):
-            legacy_send_confirmation.update(raw_send_confirmation)
+        legacy_send_confirmation = _merge_legacy_subsection(
+            legacy_stream_config, config, "send_confirmation"
+        )
         if legacy_send_confirmation or include_attachment_defaults:
-            result["send_confirmation"] = self._validate_send_confirmation_config(legacy_send_confirmation)
+            result["send_confirmation"] = self._validate_send_confirmation_config(
+                legacy_send_confirmation
+            )
 
-        legacy_attachment_monitor = {}
-        if isinstance(legacy_stream_config, dict) and isinstance(legacy_stream_config.get("attachment_monitor"), dict):
-            legacy_attachment_monitor.update(legacy_stream_config.get("attachment_monitor") or {})
-        raw_attachment_monitor = config.get("attachment_monitor")
-        if isinstance(raw_attachment_monitor, dict):
-            legacy_attachment_monitor.update(raw_attachment_monitor)
+        legacy_attachment_monitor = _merge_legacy_subsection(
+            legacy_stream_config, config, "attachment_monitor"
+        )
         if legacy_attachment_monitor or include_attachment_defaults:
-            result["attachment_monitor"] = self._validate_attachment_monitor_config(legacy_attachment_monitor)
+            result["attachment_monitor"] = self._validate_attachment_monitor_config(
+                legacy_attachment_monitor
+            )
 
         from app.utils.attachments import attachment_config
         if "attachments" in config or include_attachment_defaults:
             result["attachments"] = attachment_config(config.get("attachments"))
+
 
         return result
     def _validate_prompt_padding_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
