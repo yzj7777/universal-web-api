@@ -105,6 +105,5 @@
  "app/services/transport_profile_handlers.py::DeepSeekCompletionTransportHandler.__call__": 40,
  "app/update/engine.py::download_file_robust": 43,
  "app/utils/attachments.py::AttachmentBatch._materialize": 36,
- "app/utils/attachments.py::normalize_attachment_part": 57,
  "app/utils/browser_profile_identity.py::_resolve_via_profile_page": 48
 }

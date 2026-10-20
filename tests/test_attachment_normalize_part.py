@@ -147,6 +147,23 @@ def test_input_audio_format_is_lowered_but_not_stripped():
     assert code_of(e) == "attachment_audio_format_unsupported"
 
 
+def test_input_audio_keeps_explicit_filename():
+    """显式给了 filename 时，audio 的默认名 `audio.<fmt>` 不应覆盖它。"""
+    got = normalize_attachment_part(
+        {"type": "input_audio", "filename": "my.wav", "input_audio": {"data": B64, "format": "mp3"}}
+    )
+    assert got["file"]["filename"] == "my.wav"
+    assert got["file"]["mime_type"] == "audio/mpeg"
+
+
+@pytest.mark.parametrize("data", ["", None, 1, []])
+def test_input_audio_empty_data_raises_missing_data(data):
+    """data 为空串/非字符串时 ref 为 None，走到"缺少数据"分支（而非 invalid_base64）。"""
+    with pytest.raises(AttachmentError) as e:
+        normalize_attachment_part({"type": "input_audio", "input_audio": {"data": data, "format": "mp3"}})
+    assert code_of(e) == "attachment_missing_data"
+
+
 def test_input_audio_requires_dict():
     with pytest.raises(AttachmentError) as e:
         normalize_attachment_part({"type": "input_audio", "input_audio": "x"})
