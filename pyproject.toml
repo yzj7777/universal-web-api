@@ -79,6 +79,7 @@ dev = [
     "mypy>=1.11,<3",
     # Python 3.10 没有 tomllib，测试读取 pyproject.toml 时需要。
     "tomli>=2.0; python_version < '3.11'",
+    "radon>=6.0.1",
 ]
 
 [tool.uv]
