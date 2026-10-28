@@ -1,6 +1,6 @@
 # uwa-agent：为 universal-web-api 特调的最小 CLI Agent
 
-> 代码：`agent/`（仅标准库依赖）· 单测：`tests/test_agent_*.py`（66 项）· 版本：0.1.0
+> 代码：`agent/`（仅标准库依赖）· 单测：`tests/test_agent_*.py` + `tests/test_dsml_tool_calls.py`（90+ 项）· 版本：0.2.0
 >
 > 一句话：通用 Agent（Claude Code / Cline / CrewAI…）是按“原生 API 模型”设计的，
 > 遇到本项目的**网页桥接**（慢、高延迟、弱结构化输出）就会高失败；
@@ -146,3 +146,48 @@ python -m agent tools
 | 空回复 nudge 后仍空 | 站点流解析问题：先看服务端请求监控，再按教程测选择器 |
 | `loop` 停止 | 任务超出双工具能力（如需写文件）→ 等 P1 或拆小任务 |
 | `max_steps` 停止 | 缩小任务范围，或 `--max-steps` 调大（注意墙钟预算） |
+
+## 8. 实战补丁 v0.2（2026-10-28，DeepSeek 网页端 + Windows）
+
+首轮真实试用暴露了三个问题，全部已修（`agent/dsml.py` 新增，loop/client/prompts/tools/cli 联动）：
+
+### 8.1 DeepSeek DSML 方言：终答里藏着工具调用
+
+**症状**：`doctor --smoke` 失败；一次 11 步任务的终答是纯 DSML 文本
+（`<｜｜DSML｜｜ invoke name="read_file">…`），Agent 把它当答案直接结束，
+本该执行 `read_file pyproject.toml` 继续跑。
+
+**根因**：DeepSeek 网页端模型偶尔不用桥接要求的 `<adapter_calls>`，
+而是吐自家 DSML 标记（参数还带 `string="true|false"` 类型提示）。
+桥接三层解析（JSON → 严格 XML）都不认识，只能当普通文本。
+
+**双侧修复**：
+
+- 服务端 `app/services/tool_calling_parse.py` 新增 `_try_parse_dsml_tool_calls`
+ （JSON → XML 之后第三顺位），按工具 schema 强转类型（如 `limit: "60"` → `60`），
+  未知工具/坏参数走 `malformed_tool_payload` 触发修复重试；
+- Agent 侧 `agent/dsml.py` 做最后一道兜底：终答“基本只有”DSML/残留 XML 标记
+  （标记外 prose ≤120 字符）就地解析执行；纯标记但解析失败则同轮 nudge 重发一次；
+  混在长正文里的标记视为讲解，不打扰。
+
+### 8.2 Windows 上模型连错 Unix 命令
+
+**症状**：`ls -la` → `dir` → bash for 循环 → `for /d` → powershell，
+浪费 3~4 个慢轮次才摸对 shell。
+
+**修复**：system prompt 与 `bash` 工具描述按操作系统渲染
+（`build_system_prompt(..., os_name)` / `build_tool_schemas(os_name)`）。
+Windows 版明确 `cmd.exe` 方言、禁用 `ls/grep/head`、复杂逻辑直接指 powershell。
+
+### 8.3 站点限流：步间零等待连打被“发送过于频繁”
+
+**症状**：约 7 轮后网页端报“消息发送过于频繁，请稍后重试”，
+随后一轮耗时 183s 且返回空回复。
+
+**修复**：
+
+- 新增 `--step-delay`（默认 3s，`UWA_STEP_DELAY`）：步间等待，也适用于校验修复轮；
+- 限流识别改认文案指纹（`RATE_LIMIT_HINTS`：频繁/稍后重试/too many requests…），
+  不再依赖状态码；
+- 限流退避改为 30/60/120/180s 长退避并尊重 `Retry-After`，耗尽后给可操作提示
+  （过几分钟再试 / 调大 `--step-delay`）。

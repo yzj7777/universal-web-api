@@ -36,6 +36,21 @@ RETRYABLE_CODES = {
     "worker_timeout",
 }
 
+#: 限流文案指纹：网页端把限流包装成各种状态码（甚至 200+error），只能认文案。
+#: 实测 DeepSeek 网页端：“消息发送过于频繁，请稍后重试”。
+RATE_LIMIT_HINTS = (
+    "频繁",
+    "稍后重试",
+    "稍后再试",
+    "请稍后",
+    "too many requests",
+    "try again later",
+    "rate limit",
+    "ratelimit",
+    "rate_limit",
+    "overloaded",
+)
+
 
 class BridgeError(Exception):
     """按“Agent 该怎么处理”分类后的桥接错误。"""
@@ -49,6 +64,7 @@ class BridgeError(Exception):
         code: str = "",
         retryable: bool = False,
         raw: str = "",
+        retry_after: float = 0.0,
     ) -> None:
         super().__init__(message)
         self.kind = kind
@@ -56,9 +72,17 @@ class BridgeError(Exception):
         self.code = code
         self.retryable = retryable
         self.raw = raw
+        self.retry_after = max(0.0, float(retry_after or 0))
 
 
-def classify_bridge_error(status: int, payload: Any, raw_text: str = "") -> BridgeError:
+def _looks_rate_limited(code: str, message: str) -> bool:
+    haystack = f"{code} {message}".lower()
+    return any(hint in haystack for hint in RATE_LIMIT_HINTS)
+
+
+def classify_bridge_error(
+    status: int, payload: Any, raw_text: str = "", *, retry_after: float = 0.0,
+) -> BridgeError:
     """把 HTTP 状态码 + OpenAI 风格 error body 翻译成 BridgeError。"""
     error = payload.get("error") if isinstance(payload, dict) else None
     if isinstance(error, dict):
@@ -81,15 +105,22 @@ def classify_bridge_error(status: int, payload: Any, raw_text: str = "") -> Brid
             f"工具参数校验失败：{message}",
             kind="validation_exhausted", status=status, code=code, raw=raw_text,
         )
-    if status == 422 or code in {"prompt_rejected", "arena_prompt_rejected"}:
-        return BridgeError(
-            f"提示词被拒绝（HTTP {status}）：{message}",
-            kind="prompt_rejected", status=status, code=code or "prompt_rejected", raw=raw_text,
-        )
     if status == 499 or code in {"manual_terminate", "request_cancelled"}:
         return BridgeError(
             f"请求被取消：{message}", kind="cancelled",
             status=status, code=code or "request_cancelled", raw=raw_text,
+        )
+    if status == 429 or _looks_rate_limited(code, message):
+        # 限流一旦识别就走长退避（30s 起），短退避只会反复撞墙。
+        return BridgeError(
+            f"站点限流：{message}", kind="rate_limit",
+            status=status, code=code or "rate_limit", retryable=True,
+            raw=raw_text, retry_after=retry_after,
+        )
+    if status == 422 or code in {"prompt_rejected", "arena_prompt_rejected"}:
+        return BridgeError(
+            f"提示词被拒绝（HTTP {status}）：{message}",
+            kind="prompt_rejected", status=status, code=code or "prompt_rejected", raw=raw_text,
         )
     if status == 400 or (400 <= status < 500 and error_type == "invalid_request_error"):
         return BridgeError(
@@ -214,6 +245,15 @@ class BridgeClient:
         self._resolved_model: Optional[str] = None
 
     # -- 基础请求 --
+    @staticmethod
+    def _retry_after_from(exc: urllib.error.HTTPError) -> float:
+        try:
+            headers = exc.headers
+            value = headers.get("Retry-After") if headers is not None else None
+            return max(0.0, float(str(value or 0).strip() or 0))
+        except (TypeError, ValueError, AttributeError):
+            return 0.0
+
     def _post_json(self, url: str, body: Dict[str, Any], timeout: float) -> Tuple[int, str]:
         data = json.dumps(body, ensure_ascii=False).encode("utf-8")
         headers = {"Content-Type": "application/json", **self.config.auth_headers}
@@ -230,7 +270,10 @@ class BridgeClient:
                 payload = json.loads(raw) if raw.strip() else {}
             except (TypeError, ValueError):
                 payload = {}
-            raise classify_bridge_error(int(exc.code or 0), payload, raw) from exc
+            raise classify_bridge_error(
+                int(exc.code or 0), payload, raw,
+                retry_after=self._retry_after_from(exc),
+            ) from exc
         except TimeoutError as exc:
             raise BridgeError(f"请求超时（{timeout:g}s）：{url}", kind="timeout", retryable=True) from exc
         except urllib.error.URLError as exc:
@@ -257,7 +300,10 @@ class BridgeClient:
                 payload = json.loads(raw) if raw.strip() else {}
             except (TypeError, ValueError):
                 payload = {}
-            raise classify_bridge_error(int(exc.code or 0), payload, raw) from exc
+            raise classify_bridge_error(
+                int(exc.code or 0), payload, raw,
+                retry_after=self._retry_after_from(exc),
+            ) from exc
         except (TimeoutError, urllib.error.URLError) as exc:
             raise BridgeError(f"无法连接服务 {url}：{exc}", kind="transport", retryable=True) from exc
         latency = time.monotonic() - started

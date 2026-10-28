@@ -81,6 +81,14 @@ def parse_tool_response(
         )
         return xml_payload
 
+    dsml_payload = _try_parse_dsml_tool_calls(raw, allowed)
+    if dsml_payload is not None:
+        logger.debug(
+            "[tool_calling] parsed DSML payload "
+            f"tool_calls={len(dsml_payload.get('tool_calls') or [])}"
+        )
+        return dsml_payload
+
     logger.debug(f"[tool_calling] falling back to final-text mode (len={len(raw)})")
     return {
         "mode": "final",
@@ -1139,6 +1147,139 @@ def _try_parse_xml_tool_calls(
         _extract_text_excluding_spans(raw, [(start, end)]).strip()
     )
 
+    return {
+        "mode": "tool_calls",
+        "content": visible_text or None,
+        "tool_calls": tool_calls,
+    }
+
+
+# --- DeepSeek 网页端 DSML 方言（实战发现 2026-10-28） ---------------------------
+# 模型偶尔不按 <adapter_calls> 回，而是吐自家标记：
+#   <｜｜DSML｜｜ invoke name="read_file">
+#   <｜｜DSML｜｜ parameter name="path">x.py</｜｜DSML｜｜ parameter>
+#   </｜｜DSML｜｜ invoke>
+# agent/dsml.py 有一份客户端镜像实现（宽容归一化）；这里是服务端强校验版，
+# 解析出的 calls 仍要过 _inspect_tool_response 的全套 schema 校验。
+
+_DSML_BAR_CLASS = r"[\uFF5C\u2502|]{2}"
+_DSML_TAG_OPEN = r"<\s*" + _DSML_BAR_CLASS + r"\s*DSML\s*" + _DSML_BAR_CLASS
+_DSML_TAG_CLOSE = r"</\s*" + _DSML_BAR_CLASS + r"\s*DSML\s*" + _DSML_BAR_CLASS
+_DSML_INVOKE_RE = re.compile(
+    _DSML_TAG_OPEN + r"\s*invoke\b([^>]*)>(.*?)"
+    + _DSML_TAG_CLOSE + r"\s*invoke\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
+_DSML_PARAM_RE = re.compile(
+    _DSML_TAG_OPEN + r"\s*parameter\b([^>]*)>(.*?)"
+    + _DSML_TAG_CLOSE + r"\s*parameter\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
+_DSML_CALLS_OPEN_RE = re.compile(_DSML_TAG_OPEN + r"\s*calls?\s*>", re.IGNORECASE)
+_DSML_CALLS_CLOSE_RE = re.compile(_DSML_TAG_CLOSE + r"\s*calls?\s*>", re.IGNORECASE)
+_DSML_INVOKE_HINT_RE = re.compile(
+    _DSML_TAG_OPEN + r"\s*invoke\b[^>]*\bname\s*=", re.IGNORECASE
+)
+
+
+def _looks_like_dsml_tool_payload(text: str) -> bool:
+    value = str(text or "")
+    return bool(value) and _DSML_INVOKE_HINT_RE.search(value) is not None
+
+
+def _coerce_dsml_value(text: str, param_schema: Any, force_string: bool) -> Any:
+    """按参数 schema 把 DSML 文本值强转为标量；转不了就原样返回。"""
+    value = str(text or "").strip()
+    if force_string or not value or not isinstance(param_schema, dict):
+        return value
+    raw_type = param_schema.get("type")
+    if isinstance(raw_type, str):
+        types = {raw_type.strip().lower()}
+    elif isinstance(raw_type, list):
+        types = {str(item).strip().lower() for item in raw_type}
+    else:
+        return value
+    if "string" in types:
+        return value
+    if types == {"integer"}:
+        try:
+            return int(value, 10)
+        except (TypeError, ValueError):
+            return value
+    if "number" in types and types <= {"integer", "number"}:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return value
+        return int(number) if number.is_integer() else number
+    if types == {"boolean"}:
+        lowered = value.lower()
+        if lowered in {"true", "1"}:
+            return True
+        if lowered in {"false", "0"}:
+            return False
+    return value
+
+
+def _try_parse_dsml_tool_calls(
+    text: str,
+    allowed_tools: Dict[str, Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    raw = str(text or "")
+    if "dsml" not in raw.lower():
+        return None
+    matches = list(_DSML_INVOKE_RE.finditer(raw))
+    if not matches:
+        return None
+
+    tool_calls: List[Dict[str, Any]] = []
+    for match in matches:
+        invoke_attrs = _parse_xml_attrs(match.group(1) or "")
+        raw_name = str(invoke_attrs.get("name", "") or "").strip()
+        name = _resolve_tool_name(raw_name, allowed_tools)
+        if not name:
+            return None
+        params_schema = _tool_parameters_schema(allowed_tools.get(name))
+        args: Dict[str, Any] = {}
+        for param in _DSML_PARAM_RE.finditer(match.group(2) or ""):
+            param_attrs = _parse_xml_attrs(param.group(1) or "")
+            param_name = str(param_attrs.get("name", "") or "").strip()
+            if not param_name:
+                continue
+            force_string = (
+                str(param_attrs.get("string", "") or "").strip().lower() in {"true", "1"}
+            )
+            canonical = _schema_property_name(params_schema, param_name)
+            prop_schema = _schema_property_schema(params_schema, canonical)
+            args[canonical] = _coerce_dsml_value(
+                param.group(2) or "", prop_schema, force_string
+            )
+        if _contains_unicode_surrogate(args):
+            return None
+        tool_calls.append(
+            {
+                "id": _new_tool_call_id(),
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "arguments": json.dumps(args, ensure_ascii=False),
+                },
+            }
+        )
+
+    if not tool_calls:
+        return None
+    start = min(match.start() for match in matches)
+    end = max(match.end() for match in matches)
+    calls_open = _DSML_CALLS_OPEN_RE.search(raw)
+    if calls_open and calls_open.start() < start:
+        start = calls_open.start()
+    last_close = None
+    for close_match in _DSML_CALLS_CLOSE_RE.finditer(raw):
+        last_close = close_match
+    if last_close and last_close.end() > end:
+        end = last_close.end()
+    visible_text = _replace_unicode_surrogates((raw[:start] + raw[end:]).strip())
     return {
         "mode": "tool_calls",
         "content": visible_text or None,

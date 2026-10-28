@@ -30,6 +30,7 @@ from app.services.tool_calling_common import (
 from app.services.tool_calling_parse import (
     _coerce_arguments_object,
     _decode_tool_arguments,
+    _looks_like_dsml_tool_payload,
 )
 from app.services.tool_calling_prompts import _generate_tool_few_shot_examples
 
@@ -465,6 +466,12 @@ def _detect_malformed_tool_payload(raw_text: str, allowed_tool_names: Optional[s
     if _looks_like_tool_xml_payload(stripped, allowed_tool_names=allowed_tool_names):
         return (
             "The reply looked like an XML-style tool call, but it could not be parsed "
+            "into a valid declared tool."
+        )
+
+    if _looks_like_dsml_tool_payload(stripped):
+        return (
+            "The reply looked like a DSML-style tool call, but it could not be parsed "
             "into a valid declared tool."
         )
 

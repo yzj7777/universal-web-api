@@ -44,6 +44,9 @@ class AgentConfig:
     validation_retries: int = 2
     # 传输层可重试错误（429/503/超时/断连）的重试次数。
     transport_retries: int = 3
+    # 步间等待秒数：Agent 每步都是一次浏览器 roundtrip，连打会被站点限流
+    # （DeepSeek 网页端约 7 轮后报“发送过于频繁”）。0 表示关闭。
+    step_delay: float = 3.0
     allow_outside_workdir: bool = False
     verbose: bool = False
 
@@ -59,6 +62,7 @@ class AgentConfig:
         self.keep_recent_messages = max(4, int(self.keep_recent_messages or 0))
         self.validation_retries = max(0, min(5, int(self.validation_retries or 0)))
         self.transport_retries = max(0, min(10, int(self.transport_retries or 0)))
+        self.step_delay = max(0.0, min(120.0, float(self.step_delay or 0)))
 
     @property
     def chat_url(self) -> str:

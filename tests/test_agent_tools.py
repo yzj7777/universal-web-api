@@ -123,3 +123,34 @@ def test_dispatch_never_raises(tmp_path):
     assert not result.ok  # 文件不存在 → 结构化错误，而非异常
     result = dispatch("", None, str(tmp_path))
     assert not result.ok
+
+
+# --- v0.2：按操作系统渲染 schema ---
+
+def test_build_tool_schemas_os_variants():
+    from agent.tools import build_tool_schemas
+
+    def bash_desc(schemas):
+        return next(
+            s["function"]["description"]
+            for s in schemas
+            if s["function"]["name"] == "bash"
+        )
+
+    win = build_tool_schemas("windows")
+    posix = build_tool_schemas("posix")
+    assert len(win) == 2 and len(posix) == 2
+    assert "cmd.exe" in bash_desc(win) and "powershell" in bash_desc(win).lower()
+    assert "bash" in bash_desc(posix)
+    # 结构保持扁平（与 TOOL_SCHEMAS 同构，只改描述文本）。
+    from agent.tools import TOOL_SCHEMAS
+
+    wanted = {s["function"]["name"]: s["function"]["parameters"] for s in TOOL_SCHEMAS}
+    for schema in (*win, *posix):
+        params = schema["function"]["parameters"]
+        assert params["type"] == "object"
+        assert set(params["required"]) == set(wanted[schema["function"]["name"]]["required"])
+        assert set(params["properties"]) == set(wanted[schema["function"]["name"]]["properties"])
+    # 未知系统回落 posix；不污染常量。
+    assert "bash" in bash_desc(build_tool_schemas("plan9"))
+    assert "cmd.exe" not in bash_desc(TOOL_SCHEMAS)

@@ -82,7 +82,8 @@ def test_cmd_run_max_steps_exit_code(tmp_path, monkeypatch):
         )
 
     _patch_client(monkeypatch, [tool_call(i) for i in range(5)])
-    code = main(["--workdir", str(tmp_path), "--max-steps", "2", "run", "task"])
+    code = main(["--workdir", str(tmp_path), "--max-steps", "2", "--step-delay", "0",
+                 "run", "task"])
     assert code == EXIT_STOPPED
 
 
@@ -103,3 +104,11 @@ def test_cmd_run_from_file(tmp_path, monkeypatch, capsys):
     assert main(["--workdir", str(tmp_path), "run", "--file", str(task_file)]) == EXIT_OK
     assert stub is not None
     capsys.readouterr()
+
+
+def test_step_delay_flag_and_env(monkeypatch):
+    args = build_parser().parse_args(["run", "--step-delay", "0", "hi"])
+    assert make_config(args).step_delay == 0.0
+    monkeypatch.setenv("UWA_STEP_DELAY", "7.5")
+    args = build_parser().parse_args(["run", "hi"])
+    assert make_config(args).step_delay == 7.5

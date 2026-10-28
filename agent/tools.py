@@ -13,6 +13,7 @@ Schema 设计是“主攻参数 JSON 错误”的关键一环：
 
 from __future__ import annotations
 
+import copy
 import os
 import re
 import subprocess
@@ -20,8 +21,9 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
+from agent.prompts import detect_os_name
 from agent.repair import coerce_tool_args
 
 READ_FILE_SCHEMA: Dict[str, Any] = {
@@ -80,6 +82,35 @@ BASH_SCHEMA: Dict[str, Any] = {
 
 TOOL_SCHEMAS: List[Dict[str, Any]] = [READ_FILE_SCHEMA, BASH_SCHEMA]
 TOOL_NAMES: List[str] = ["read_file", "bash"]
+
+_BASH_OS_HINTS = {
+    "windows": (
+        " Runs under Windows cmd.exe (NOT bash): use dir, dir /b /s, type, findstr; "
+        "for loops or complex logic use powershell -NoProfile -Command \"...\". "
+        "Do NOT use ls/grep/head/sed/awk or Unix shell loops."
+    ),
+    "posix": (
+        " Runs under bash: chain with && (e.g. 'ls src && grep -rn foo src | head')."
+    ),
+}
+
+
+def build_tool_schemas(os_name: Optional[str] = None) -> List[Dict[str, Any]]:
+    """按操作系统渲染工具 schema（只改 bash 描述文本，结构保持扁平不变）。
+
+    实战教训：Windows 上不声明 cmd.exe，模型会默认吐 Unix 命令连错好几轮。
+    """
+    resolved = (os_name or detect_os_name() or "posix").strip().lower()
+    if resolved not in _BASH_OS_HINTS:
+        resolved = "posix"
+    schemas = copy.deepcopy(TOOL_SCHEMAS)
+    for schema in schemas:
+        function = schema.get("function") if isinstance(schema.get("function"), dict) else {}
+        if str(function.get("name") or "") == "bash":
+            function["description"] = (
+                str(function.get("description") or "").rstrip() + _BASH_OS_HINTS[resolved]
+            )
+    return schemas
 
 MAX_READ_BYTES = 2 * 1024 * 1024
 MAX_READ_OUTPUT_CHARS = 12000

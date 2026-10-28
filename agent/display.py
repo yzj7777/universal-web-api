@@ -75,8 +75,15 @@ class Printer:
             names = ", ".join(str(n) for n in event.get("names") or [])
             self.line(self.yellow(f"[loop] 本轮只执行首个工具，推迟：{names}"))
         elif kind == "retry":
+            sleep = event.get("sleep")
+            suffix = f", 等待 {sleep:g}s" if isinstance(sleep, (int, float)) and sleep else ""
             self.line(self.yellow(f"[retry] {event.get('reason')} "
-                                  f"(step {step}, attempt {event.get('attempt')})"))
+                                  f"(step {step}, attempt {event.get('attempt')}{suffix})"))
+        elif kind == "recovered_tool_call":
+            self.line(self.cyan(f"[loop] 终答里发现未解析的工具标记，已本地恢复执行：{event.get('tool')}"))
+        elif kind == "step_delay":
+            sleep = event.get("sleep", 0)
+            self.line(self.dim(f"[loop] 步间等待 {sleep:g}s（防站点限流，--step-delay 可调）"))
         elif kind == "compact":
             self.line(self.dim(f"[loop] 历史压缩 {event.get('before')}→{event.get('after')} 条"))
         elif kind == "degraded":

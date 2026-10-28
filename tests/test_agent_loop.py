@@ -48,7 +48,7 @@ class FakeClient:
 
 
 def _config(tmp_path: Path, **overrides: Any) -> AgentConfig:
-    base: Dict[str, Any] = {"workdir": str(tmp_path), "max_steps": 6}
+    base: Dict[str, Any] = {"workdir": str(tmp_path), "max_steps": 6, "step_delay": 0}
     base.update(overrides)
     return AgentConfig(**base)
 
@@ -249,3 +249,129 @@ def test_run_empty_task_uses_history_only(tmp_path):
     result = loop.run("", history=history)
     assert result.text == "pong"
     assert history is result.history  # chat 模式原地追加
+
+
+# --- v0.2：DSML 恢复 / 步间等待 / 限流长退避 ---
+
+DSML_FINAL = (
+    "<｜｜DSML｜｜ calls>\n"
+    '<｜｜DSML｜｜ invoke name="read_file">\n'
+    '<｜｜DSML｜｜ parameter name="path">note.txt</｜｜DSML｜｜ parameter>\n'
+    "</｜｜DSML｜｜ invoke>\n"
+    "</｜｜DSML｜｜ calls>"
+)
+
+
+def test_run_recovers_dsml_final_and_executes(tmp_path):
+    (tmp_path / "note.txt").write_text("recovered-content\n", encoding="utf-8")
+    script = [
+        ChatResult(content=DSML_FINAL, finish_reason="stop"),
+        ChatResult(content="读到了", finish_reason="stop"),
+    ]
+    events: List[Dict[str, Any]] = []
+    client = FakeClient(script)
+    loop = AgentLoop(client, _config(tmp_path, step_delay=0), on_event=events.append)
+    result = loop.run("task")
+    assert result.stop_reason == "final"
+    assert result.text == "读到了"
+    assert result.tool_uses == 1
+    assert any(e["type"] == "recovered_tool_call" and e["tool"] == "read_file" for e in events)
+    tool_message = next(m for m in result.history if m.get("role") == "tool")
+    assert "recovered-content" in str(tool_message.get("content"))
+
+
+def test_run_retries_unparsed_markup_once_then_accepts(tmp_path):
+    bad_markup = (
+        '<｜｜DSML｜｜ invoke name="delete_all">'
+        '<｜｜DSML｜｜ parameter name="path">x</｜｜DSML｜｜ parameter>'
+        "</｜｜DSML｜｜ invoke>"
+    )
+    script = [
+        ChatResult(content=bad_markup, finish_reason="stop"),
+        ChatResult(content="好吧，我直接回答", finish_reason="stop"),
+    ]
+    client = FakeClient(script)
+    loop = AgentLoop(client, _config(tmp_path, step_delay=0))
+    result = loop.run("task")
+    assert result.text == "好吧，我直接回答"
+    assert len(client.calls) == 2
+    assert "Format Repair" in str(client.calls[1]["messages"][-1].get("content"))
+
+
+def test_run_accepts_mixed_prose_with_markup(tmp_path):
+    text = "下面是一个示例：" + DSML_FINAL + "x" * 200
+    client = FakeClient([ChatResult(content=text, finish_reason="stop")])
+    loop = AgentLoop(client, _config(tmp_path, step_delay=0))
+    result = loop.run("task")
+    assert result.stop_reason == "final"
+    assert result.tool_uses == 0
+    assert len(client.calls) == 1
+
+
+def test_run_sleeps_between_steps(tmp_path, monkeypatch):
+    sleeps: List[float] = []
+    monkeypatch.setattr("agent.loop.time.sleep", sleeps.append)
+    script = [
+        ChatResult(content="", tool_calls=[_tool_call("bash", {"command": "echo 1"}, "c1")],
+                   finish_reason="tool_calls"),
+        ChatResult(content="", tool_calls=[_tool_call("bash", {"command": "echo 2"}, "c2")],
+                   finish_reason="tool_calls"),
+        ChatResult(content="done", finish_reason="stop"),
+    ]
+    loop = AgentLoop(FakeClient(script), _config(tmp_path, step_delay=2.5))
+    result = loop.run("task")
+    assert result.stop_reason == "final"
+    assert sleeps == [2.5, 2.5]  # 第 2、3 步之前各一次
+
+
+def test_rate_limit_uses_long_backoff(tmp_path, monkeypatch):
+    sleeps: List[float] = []
+    monkeypatch.setattr("agent.loop.time.sleep", sleeps.append)
+    script = [
+        BridgeError("消息发送过于频繁，请稍后重试", kind="rate_limit", status=500,
+                    code="x", retryable=True),
+        ChatResult(content="recovered", finish_reason="stop"),
+    ]
+    loop = AgentLoop(FakeClient(script), _config(tmp_path, step_delay=0))
+    result = loop.run("task")
+    assert result.text == "recovered"
+    assert sleeps == [30.0]
+
+
+def test_rate_limit_honors_retry_after(tmp_path, monkeypatch):
+    sleeps: List[float] = []
+    monkeypatch.setattr("agent.loop.time.sleep", sleeps.append)
+    script = [
+        BridgeError("slow", kind="rate_limit", status=429, retryable=True, retry_after=90),
+        ChatResult(content="ok", finish_reason="stop"),
+    ]
+    loop = AgentLoop(FakeClient(script), _config(tmp_path, step_delay=0))
+    loop.run("task")
+    assert sleeps == [90.0]
+
+
+def test_rate_limit_fatal_message_is_actionable(tmp_path, monkeypatch):
+    monkeypatch.setattr("agent.loop.time.sleep", lambda seconds: None)
+    script = [BridgeError("频繁", kind="rate_limit", status=429, retryable=True)] * 5
+    loop = AgentLoop(FakeClient(script), _config(tmp_path, step_delay=0, transport_retries=1))
+    result = loop.run("task")
+    assert result.stop_reason == "fatal"
+    assert "限流" in result.text and "--step-delay" in result.text
+
+
+def test_loop_uses_os_specific_schemas_and_prompt(tmp_path):
+    client = FakeClient([ChatResult(content="ok", finish_reason="stop")])
+    loop = AgentLoop(client, _config(tmp_path, step_delay=0), os_name="windows")
+    loop.run("task")
+    tools = client.calls[0]["tools"]
+    bash_desc = next(s["function"]["description"] for s in tools
+                     if s["function"]["name"] == "bash")
+    assert "cmd.exe" in bash_desc
+    assert "powershell" in result_history_system(client).lower()
+
+
+def result_history_system(client: FakeClient) -> str:
+    for message in client.calls[0]["messages"]:
+        if message.get("role") == "system":
+            return str(message.get("content") or "")
+    return ""

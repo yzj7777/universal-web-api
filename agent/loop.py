@@ -7,8 +7,12 @@
 2. 非流式调用（桥接的工具流本就是整轮缓冲后一次性下发）；
 3. 工具参数校验失败（500 ``tool_call_validation_exhausted``）不直接放弃，
    而是本地追加简化提醒再试 ``validation_retries`` 次；
-4. 传输层错误（429/503/超时）退避重试 ``transport_retries`` 次；
-5. 全部失败时降级为无工具总结轮，保证用户至少拿到一个回答。
+4. 传输层错误（429/503/超时）退避重试 ``transport_retries`` 次，
+   其中限流（rate_limit）用 30s 起的长退避；
+5. 终答文本里若“基本只有” DSML/残留 XML 工具标记（桥接没认出来），
+   本地恢复执行；纯标记但解析失败则同轮给一次重发机会；
+6. 步间等待 ``step_delay`` 秒再发下一轮，避免触发站点“发送过于频繁”；
+7. 全部失败时降级为无工具总结轮，保证用户至少拿到一个回答。
 
 事件通过 ``on_event`` 回调输出（dict，含 ``type`` 字段），CLI 用 display
 模块渲染；库调用方可自行订阅。
@@ -23,16 +27,22 @@ from typing import Any, Callable, Dict, List, Optional
 
 from agent.client import BridgeClient, BridgeError, ChatResult
 from agent.config import AgentConfig
+from agent.dsml import needs_markup_retry, recover_tool_call
 from agent.prompts import (
     CONTINUE_NUDGE,
     DEGRADED_PREFIX,
     LOOP_WARNING,
+    RECOVER_REMINDER,
     build_repair_messages,
     build_system_prompt,
+    detect_os_name,
 )
-from agent.tools import TOOL_SCHEMAS, ToolResult, dispatch
+from agent.tools import ToolResult, build_tool_schemas, dispatch
 
 EventCallback = Callable[[Dict[str, Any]], None]
+
+#: 限流退避表（秒）：网页端“稍后重试”通常要等几十秒，短退避只会反复撞墙。
+RATE_LIMIT_DELAYS = (30.0, 60.0, 120.0, 180.0)
 
 
 @dataclass
@@ -136,11 +146,21 @@ class AgentLoop:
         *,
         on_event: Optional[EventCallback] = None,
         workdir: Optional[str] = None,
+        os_name: Optional[str] = None,
     ) -> None:
         self.client = client
         self.config = config
         self.workdir = workdir or config.workdir
+        self.os_name = (os_name or detect_os_name() or "posix").strip().lower()
+        self.tool_schemas = build_tool_schemas(self.os_name)
         self._emit = on_event or (lambda event: None)
+
+    @staticmethod
+    def _retry_delay(exc: BridgeError, attempt: int) -> float:
+        if exc.kind == "rate_limit":
+            scheduled = RATE_LIMIT_DELAYS[min(attempt, len(RATE_LIMIT_DELAYS) - 1)]
+            return max(scheduled, exc.retry_after)
+        return min(2.0 * (2 ** attempt), 20.0)
 
     def _call_with_retry(
         self,
@@ -157,6 +177,8 @@ class AgentLoop:
             if attempt > 1:
                 self._emit({"type": "retry", "step": step, "attempt": attempt,
                             "of": attempts, "reason": "validation_exhausted"})
+                if self.config.step_delay > 0:
+                    time.sleep(self.config.step_delay)
             try:
                 return self._call_transport(payload, use_tools=use_tools, step=step)
             except BridgeError as exc:
@@ -181,7 +203,7 @@ class AgentLoop:
                 started = time.monotonic()
                 result = self.client.chat(
                     messages,
-                    tools=TOOL_SCHEMAS if use_tools else None,
+                    tools=self.tool_schemas if use_tools else None,
                     tool_choice="auto" if use_tools else "none",
                     parallel_tool_calls=False,
                     stream=False,
@@ -195,7 +217,7 @@ class AgentLoop:
                 last_error = exc
                 if not exc.retryable or attempt >= self.config.transport_retries:
                     raise
-                delay = min(2.0 * (2 ** attempt), 20.0)
+                delay = self._retry_delay(exc, attempt)
                 self._emit({"type": "retry", "step": step, "attempt": attempt + 1,
                             "reason": f"{exc.kind}:{exc.code or exc.status}",
                             "sleep": delay})
@@ -203,12 +225,36 @@ class AgentLoop:
         assert last_error is not None  # pragma: no cover - 逻辑兜底
         raise last_error
 
+    def _retry_unparsed_markup(
+        self,
+        messages: List[Dict[str, Any]],
+        original: ChatResult,
+        *,
+        step: int,
+    ) -> ChatResult:
+        """纯工具标记但解析失败时，同轮让模型按标准格式重发一次。
+
+        重试本身失败则退回原文接受为终答：格式修复轮不值得再烧一次
+        慢请求去报错，原文至少把标记展示给了用户。
+        """
+        try:
+            return self._call_transport(
+                build_repair_messages(messages, reminder=RECOVER_REMINDER),
+                use_tools=True,
+                step=step,
+            )
+        except BridgeError as exc:
+            self._emit({"type": "retry", "step": step,
+                        "reason": f"markup_retry_failed:{exc.kind}"})
+            return original
+
     def run(self, task: str, history: Optional[List[Dict[str, Any]]] = None) -> AgentResult:
         """执行一个任务。history 可传入 chat 模式的跨轮历史（会被原地追加）。"""
         started = time.monotonic()
         messages: List[Dict[str, Any]] = history if history is not None else []
         if not any(str(m.get("role") or "") == "system" for m in messages if isinstance(m, dict)):
-            messages.append({"role": "system", "content": build_system_prompt(self.workdir)})
+            messages.append({"role": "system", "content": build_system_prompt(
+                self.workdir, os_name=self.os_name)})
         task_text = str(task or "").strip()
         if task_text:
             messages.append({"role": "user", "content": task_text})
@@ -223,6 +269,10 @@ class AgentLoop:
                 return AgentResult(degraded_text or "（墙钟预算耗尽，未完成）",
                                    steps=step - 1, tool_uses=tool_uses,
                                    stop_reason="wall_time", history=messages)
+            if step > 1 and self.config.step_delay > 0:
+                self._emit({"type": "step_delay", "step": step,
+                            "sleep": self.config.step_delay})
+                time.sleep(self.config.step_delay)
             compacted = compact_history(
                 messages, max_chars=self.config.max_history_chars,
                 max_tool_chars=self.config.max_tool_result_chars,
@@ -244,20 +294,44 @@ class AgentLoop:
                     return AgentResult(degraded, steps=step, tool_uses=tool_uses,
                                        stop_reason="degraded", history=messages)
                 self._emit({"type": "fatal", "step": step, "error": str(exc)[:300]})
-                return AgentResult(f"执行失败（{exc.kind}）：{exc}",
+                if exc.kind == "rate_limit":
+                    fatal_text = ("触发站点限流，多轮等待后仍未恢复。请过几分钟再试，"
+                                  "或调大 --step-delay 降低发包频率。"
+                                  f"（{exc}）")
+                else:
+                    fatal_text = f"执行失败（{exc.kind}）：{exc}"
+                return AgentResult(fatal_text,
                                    steps=step - 1, tool_uses=tool_uses,
                                    stop_reason="fatal", history=messages)
 
             if not result.has_tool_calls:
                 final = result.content.strip()
-                if final:
+                if not final:
+                    # 空回复：nudge 一次（只在本轮，不污染历史则无法生效，故入历史）。
+                    self._emit({"type": "retry", "step": step, "reason": "empty_reply"})
+                    messages.append({"role": "user", "content": CONTINUE_NUDGE})
+                    continue
+                recovered = recover_tool_call(result.content)
+                if recovered is not None:
+                    # DSML/残留 XML 方言：桥接没认出来，本地恢复执行。
+                    self._emit({"type": "recovered_tool_call", "step": step,
+                                "tool": recovered["function"]["name"]})
+                    result = ChatResult(content=result.content, tool_calls=[recovered],
+                                        finish_reason="tool_calls", raw=result.raw)
+                elif needs_markup_retry(result.content):
+                    # 纯标记但解析失败：同轮给一次重发机会，仍不行就接受原文。
+                    self._emit({"type": "retry", "step": step,
+                                "reason": "unparsed_tool_markup"})
+                    result = self._retry_unparsed_markup(compacted, result, step=step)
+                    if not result.has_tool_calls:
+                        retried = result.content.strip() or final
+                        messages.append({"role": "assistant", "content": retried})
+                        return AgentResult(retried, steps=step, tool_uses=tool_uses,
+                                           stop_reason="final", history=messages)
+                else:
                     messages.append({"role": "assistant", "content": result.content})
                     return AgentResult(result.content, steps=step, tool_uses=tool_uses,
                                        stop_reason="final", history=messages)
-                # 空回复：nudge 一次（只在本轮，不污染历史则无法生效，故入历史）。
-                self._emit({"type": "retry", "step": step, "reason": "empty_reply"})
-                messages.append({"role": "user", "content": CONTINUE_NUDGE})
-                continue
 
             call = result.tool_calls[0]
             if len(result.tool_calls) > 1:

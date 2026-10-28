@@ -217,3 +217,39 @@ def test_client_resolve_model_empty_raises(monkeypatch):
     with pytest.raises(BridgeError) as exc_info:
         client.resolve_model()
     assert exc_info.value.code == "no_models"
+
+
+# --- v0.2：限流文案识别 ---
+
+def test_classify_rate_limit_message_hints():
+    for message in ("消息发送过于频繁，请稍后重试",
+                    "Too many requests, try again later",
+                    "server overloaded, please retry"):
+        error = classify_bridge_error(500, {"error": {"message": message, "code": "x"}}, "")
+        assert error.kind == "rate_limit" and error.retryable, message
+
+
+def test_classify_rate_limit_keeps_retry_after():
+    error = classify_bridge_error(429, {"error": {"message": "slow", "code": ""}}, "", retry_after=45)
+    assert error.kind == "rate_limit"
+    assert error.retry_after == 45.0
+
+
+def test_retry_after_header_flows_into_error(monkeypatch):
+    import io as stdlib_io
+    import urllib.error as urlerror
+
+    def fake_urlopen(request, timeout=None):
+        body = '{"error": {"message": "slow", "code": ""}}'
+        headers = {"Retry-After": "12"}
+        raise urlerror.HTTPError(
+            request.full_url, 429, "err", headers, stdlib_io.BytesIO(body.encode()))
+
+    monkeypatch.setattr("agent.client.urllib.request.urlopen", fake_urlopen)
+    client = BridgeClient(AgentConfig(model="m1"))
+    try:
+        client.chat([{"role": "user", "content": "hi"}])
+        raise AssertionError("should raise")
+    except BridgeError as exc:
+        assert exc.kind == "rate_limit"
+        assert exc.retry_after == 12.0

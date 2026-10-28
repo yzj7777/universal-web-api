@@ -51,6 +51,8 @@ def _common_parser() -> argparse.ArgumentParser:
                         help="单轮 LLM 请求超时秒数（桥接慢，默认 300）")
     common.add_argument("--max-wall", type=float, default=argparse.SUPPRESS,
                         help="任务墙钟预算秒数（默认 1200）")
+    common.add_argument("--step-delay", type=float, default=argparse.SUPPRESS,
+                        help="步间等待秒数，防站点限流（默认 3，0 关闭）")
     common.add_argument("--allow-outside-workdir", action="store_true", default=argparse.SUPPRESS,
                         help="允许 read_file 读取工作目录外的文件（默认禁止）")
     common.add_argument("-v", "--verbose", action="store_true", default=argparse.SUPPRESS)
@@ -78,6 +80,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="单轮 LLM 请求超时秒数（桥接慢，默认 300）")
     parser.add_argument("--max-wall", type=float, default=float(_env("UWA_MAX_WALL") or 1200),
                         help="任务墙钟预算秒数（默认 1200）")
+    parser.add_argument("--step-delay", type=float, default=float(_env("UWA_STEP_DELAY") or 3),
+                        help="步间等待秒数，防站点限流（默认 3，0 关闭）")
     parser.add_argument("--allow-outside-workdir", action="store_true",
                         help="允许 read_file 读取工作目录外的文件（默认禁止）")
     parser.add_argument("-v", "--verbose", action="store_true")
@@ -107,6 +111,7 @@ def make_config(args: argparse.Namespace) -> AgentConfig:
         max_steps=args.max_steps,
         max_wall_seconds=args.max_wall,
         request_timeout=args.timeout,
+        step_delay=args.step_delay,
         allow_outside_workdir=args.allow_outside_workdir,
         verbose=args.verbose,
     )
