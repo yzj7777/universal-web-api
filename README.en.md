@@ -150,6 +150,7 @@ Detailed HTML guides are hosted locally and can be accessed via the dashboard af
 | 🛡️ [Stealth & Advanced Options](./static/tutorial/index.html#stealth) | Anti-detection settings, browser fingerprint overrides, and low-interference modes |
 | ❓ [Limitations & FAQ](./static/tutorial/index.html#faq) | Timeout troubleshooting, captcha handling, and OS differences |
 | 🔐 [Security Boundary](./static/tutorial/index.html#security-boundary) | Local binding, authentication, CORS, DevTools, and sensitive-data handling |
+| 🤖 [Tailored Agent](./docs/agent.md) | Minimal CLI agent tuned for the web bridge (read_file + bash), single-tool turns with local recovery (Chinese doc) |
 
 The tutorial is bundled as static HTML, so it also works without an internet connection. Open [`static/tutorial/index.html`](./static/tutorial/index.html) directly, or use the dashboard's Tutorial entry after startup.
 

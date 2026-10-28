@@ -123,6 +123,15 @@ graph TD
 | 🛡️ [低干扰与高级环境](./static/tutorial/index.html#stealth) | 浏览器指纹防护、低熵行为模拟等抗检测配置 |
 | ❓ [常见问题与限制说明](./static/tutorial/index.html#faq) | 超时排查、验证码处理指导、平台差异性说明 |
 | 🔐 [安全边界与部署建议](./static/tutorial/index.html#security-boundary) | 本机监听、认证、CORS、DevTools 端口及敏感数据处理 |
+| 🤖 [特调 Agent](./docs/agent.md) | 为网页桥接特调的最小 CLI Agent（read_file + bash），单步单调、失败自愈 |
+
+---
+
+## 🤖 特调 Agent（uwa-agent）
+
+通用 Agent 按原生 API 模型设计，在网页桥接上容易因工具参数错误而高失败。
+仓库自带 `python -m agent` 最小 CLI Agent：双扁平工具、单步单调、三级降级，仅依赖标准库。
+快速上手：`python -m agent doctor` → `python -m agent run "任务"`，详见 [docs/agent.md](./docs/agent.md)。
 
 ---
 

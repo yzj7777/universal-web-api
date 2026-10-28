@@ -165,6 +165,18 @@ Invoke-RestMethod 'http://127.0.0.1:8199/v1/chat/completions' -Method Post -Cont
 
 也可以在请求体中传 `preset_name`，或在域名路由 URL 上用同名查询参数临时覆盖预设。完整参数和控制台操作见 [本地教程](./static/tutorial/index.html#quickstart)。
 
+## 特调 Agent（uwa-agent）
+
+通用 Agent（Claude Code / Cline / CrewAI…）按原生 API 模型设计，在本项目的网页桥接上容易因工具参数错误而失败。仓库自带一个按桥接特性反向设计的最小 CLI Agent：只有 `read_file` / `bash` 两个扁平工具，单步单调、失败本地自愈，仅依赖 Python 标准库：
+
+```bash
+python -m agent doctor          # 体检：健康检查 → 模型列表 → 自动选模型
+python -m agent run "总结 README 的快速开始步骤"
+python -m agent chat            # 交互多轮
+```
+
+设计取舍、根因分析与扩展方式见 [`docs/agent.md`](./docs/agent.md)。
+
 ## 配置
 
 复制 `.env.example` 为 `.env` 后按需修改。空值和非法数字通常会回落到默认值；修改环境变量后请重启服务。
